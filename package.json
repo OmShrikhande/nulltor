@@ -1,0 +1,27 @@
+{
+  "name": "offline_notepad",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host 'Port 3000 cleared.'\"",
+    "restart": "npm run stop && npm run dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "crypto-js": "^4.2.0",
+    "express": "^5.2.1",
+    "lib0": "^0.2.117",
+    "nodemon": "^3.1.14",
+    "selfsigned": "^5.5.0",
+    "socket.io": "^4.8.3",
+    "yjs": "^13.6.31"
+  }
+}

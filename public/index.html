@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure LAN Notepad</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/vendor/crypto-js/crypto-js.js"></script>
+</head>
+
+<body class="locked">
+
+    <div id="boot-error" class="boot-error" hidden></div>
+
+    <div id="lock-screen" class="lock-screen">
+        <div class="lock-card">
+            <div class="lock-icon">🔐</div>
+            <h1>Secure Room</h1>
+
+            <div class="room-tabs">
+                <button id="tab-create" class="room-tab active" type="button">Create Room</button>
+                <button id="tab-join" class="room-tab" type="button">Join Room</button>
+            </div>
+
+            <div id="create-panel">
+                <p class="panel-desc"><strong>Host PC (open this page first):</strong> enter any key like <strong>123456789</strong> then click Create Room.</p>
+                <input id="create-pass" type="text" inputmode="numeric" placeholder="Room key" autocomplete="off">
+                <p id="create-error" class="pass-error"></p>
+                <button id="create-btn" class="btn btn-primary" type="button">Create Room</button>
+            </div>
+
+            <div id="join-panel" hidden>
+                <p class="panel-desc"><strong>Second PC:</strong> same URL, same key, then click Join Room. Host must click Allow.</p>
+                <p id="room-wait" class="room-wait">Waiting for host to create the room…</p>
+                <input id="join-pass" type="text" inputmode="numeric" placeholder="Room key from host" autocomplete="off">
+                <p id="join-error" class="pass-error"></p>
+                <button id="join-btn" class="btn btn-primary" type="button">Join Room</button>
+            </div>
+
+            <p class="lock-hint">Server: <code id="server-url"></code></p>
+        </div>
+    </div>
+
+    <div id="join-modal" class="modal" hidden>
+        <div class="modal-card">
+            <h2>Join Request</h2>
+            <p>Someone wants to join your room.</p>
+            <code id="join-user-id"></code>
+            <div class="modal-actions">
+                <button id="reject-btn" class="btn btn-ghost" type="button">Deny</button>
+                <button id="approve-btn" class="btn btn-primary" type="button">Allow</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-banner" class="app-banner" hidden></div>
+
+    <div class="app">
+        <header class="toolbar">
+            <div class="brand">
+                <span class="brand-icon">📝</span>
+                <div>
+                    <strong>Secure LAN Notepad</strong>
+                    <span id="encrypt-badge" class="badge" hidden>AES · E2E</span>
+                </div>
+            </div>
+            <div class="toolbar-modes">
+                <span class="toolbar-label">View</span>
+                <button class="mode-btn active" data-mode="normal" type="button">Normal</button>
+                <button class="mode-btn" data-mode="mask" type="button">Mask</button>
+                <button class="mode-btn" data-mode="cipher" type="button">Cipher</button>
+                <span id="mode-indicator" class="mode-indicator">Normal</span>
+            </div>
+            <div class="toolbar-emoji">
+                <span class="toolbar-label">Emoji</span>
+                <button class="emoji-btn" type="button">😀</button>
+                <button class="emoji-btn" type="button">❤️</button>
+                <button class="emoji-btn" type="button">👍</button>
+                <button class="emoji-btn" type="button">🔥</button>
+                <button class="emoji-btn" type="button">✅</button>
+                <button class="emoji-btn" type="button">⭐</button>
+            </div>
+        </header>
+
+        <aside class="sidebar">
+            <h3>Connected Peers</h3>
+            <ul id="peer-list" class="peer-list"><li class="empty">Waiting…</li></ul>
+        </aside>
+
+        <main class="editor-panel">
+            <div class="editor-wrap">
+                <textarea id="editor" placeholder="Notepad opens here after Create or Join…"></textarea>
+            </div>
+        </main>
+
+        <footer class="status-bar">
+            <span id="status">Starting…</span>
+            <span id="char-count">0 chars</span>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById("server-url").textContent = location.origin;
+    </script>
+    <script src="crypto.js"></script>
+    <script src="app.js"></script>
+
+</body>
+</html>
