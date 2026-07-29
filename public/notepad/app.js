@@ -15,6 +15,19 @@
     let displayMode = "normal";
     let snapshotTimer = null;
 
+    // ── Stable identity from JWT ──────────────────────────────────────────
+    // Decode userId from the JWT token passed in the URL so private room
+    // keys remain consistent across sessions, browsers, and incognito tabs.
+    function getUserIdFromToken(jwt) {
+        if (!jwt) return null;
+        try {
+            const payload = jwt.split('.')[1];
+            const padded = payload + '=='.slice(0, (4 - payload.length % 4) % 4);
+            const decoded = JSON.parse(atob(padded));
+            return decoded.sub || null;
+        } catch (_) { return null; }
+    }
+
     let peerName = localStorage.getItem("peer-name");
     if (!peerName) {
         peerName = "User-" + Math.floor(Math.random() * 900 + 100);
@@ -161,6 +174,10 @@
     const projectId = urlParams.get("projectId");
     const token = urlParams.get("token");
 
+    // Stable user identity: prefer JWT userId, fall back to random peer name
+    const userId = getUserIdFromToken(token);
+    const stableIdentity = userId || peerName; // userId is stable across sessions
+
     function fetchRoomSalt(pass, mode) {
         if (!projectId || !fileId || !token) {
             $("file-error").textContent = "Missing file context in URL.";
@@ -176,8 +193,9 @@
         
         try {
             if (mode === 'private') {
-                // Auto-manage private key in localStorage
-                const storageKey = `private_key_${fileId}_${peerName}`;
+                // Private key is keyed by fileId + stable userId (from JWT)
+                // This ensures the same user always gets the same key for the same file
+                const storageKey = `private_key_${fileId}_${stableIdentity}`;
                 let privateKey = localStorage.getItem(storageKey);
                 if (!privateKey) {
                     const randomBytes = new Uint8Array(16);
@@ -195,8 +213,9 @@
                 socket.emit("join-file", { fileId: fileId });
                 openEditor("Collaborative Mode (Auto-Syncing)");
             } else {
-                socket.emit("join-file", { fileId: fileId + "_private_" + peerName });
-                openEditor("Private Copy (Local Only)");
+                // Room name uses stableIdentity so the same user always joins the same room
+                socket.emit("join-file", { fileId: fileId + "_private_" + stableIdentity });
+                openEditor("Private Copy");
             }
             bindEditor();
             socket.emit("register-peer", { name: peerName, color: peerColor });

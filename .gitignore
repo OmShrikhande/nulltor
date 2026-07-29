@@ -28,3 +28,6 @@ desktop.ini
 *.seed
 *.tmp
 .cache/
+
+# Snapshots (persisted in PostgreSQL, not on disk)
+snapshots/

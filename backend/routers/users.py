@@ -15,6 +15,21 @@ from services.audit_service import log_action
 router = APIRouter()
 
 
+@router.get("/search", summary="Search users for dropdown (authenticated)")
+async def search_users(
+    q: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    _actor: User = Depends(get_current_user),
+):
+    stmt = select(User.email, User.username).where(User.is_active == True)
+    if q:
+        stmt = stmt.where((User.email.ilike(f"%{q}%")) | (User.username.ilike(f"%{q}%")))
+    
+    result = await db.execute(stmt.order_by(User.username).limit(50))
+    users = result.all()
+    return [{"email": u.email, "username": u.username} for u in users]
+
+
 @router.get("", response_model=UserList, summary="List all users (superadmin)")
 async def list_users(
     skip: int = Query(0, ge=0),

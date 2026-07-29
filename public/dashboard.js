@@ -559,12 +559,23 @@ async function loadMembersTable(tableWrap, projectId, isSA, actionsEl) {
   }
 }
 
-function openAddMemberModal(projectId, tableWrap, isSA, actionsEl) {
+async function openAddMemberModal(projectId, tableWrap, isSA, actionsEl) {
+  // Pre-fetch active users for the dropdown
+  let existingUsers = [];
+  try {
+    existingUsers = await api('GET', '/users/search');
+  } catch (err) {
+    console.warn("Could not fetch users for dropdown:", err);
+  }
+
   openModal('Add Member',
     `<div class="form-body">
       <div class="form-field">
         <label>Email Address</label>
-        <input id="m-email" type="email" placeholder="user@example.com" />
+        <div class="autocomplete-wrapper" id="m-email-wrapper">
+          <input id="m-email" type="email" placeholder="Select from dropdown or type new..." autocomplete="off" />
+          <div id="m-email-dropdown" class="autocomplete-dropdown"></div>
+        </div>
       </div>
       <div class="form-field">
         <label>Role</label>
@@ -573,11 +584,58 @@ function openAddMemberModal(projectId, tableWrap, isSA, actionsEl) {
           <option value="lead">Lead (Admin)</option>
         </select>
       </div>
-      <p class="text-muted mt-8" style="font-size:11px">⚠️ User must already have an account. Create them first in <strong>User Management</strong> if they don't exist yet.</p>
+      <p class="text-muted mt-8" style="font-size:11px">💡 If the user doesn't have an account yet, one will be auto-created and a temporary password will be shown to you.</p>
     </div>`,
     `<button class="btn btn-ghost" id="m-cancel-member">Cancel</button>
      <button class="btn btn-primary" id="m-add-member">Add Member</button>`
   );
+
+  const inputEl = $('m-email');
+  const dropdownEl = $('m-email-dropdown');
+
+  // Render dropdown items
+  function renderDropdown(filterText = '') {
+    const q = filterText.toLowerCase();
+    const filtered = existingUsers.filter(u => 
+      u.email.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)
+    );
+    
+    if (filtered.length === 0) {
+      dropdownEl.innerHTML = `<div class="autocomplete-item"><span class="autocomplete-item-name" style="color:var(--text-muted);font-weight:normal">No existing users match. Press 'Add Member' to invite a new user.</span></div>`;
+    } else {
+      dropdownEl.innerHTML = filtered.map(u => 
+        `<div class="autocomplete-item" data-email="${escHtml(u.email)}">
+           <span class="autocomplete-item-name">${escHtml(u.username)}</span>
+           <span class="autocomplete-item-email">${escHtml(u.email)}</span>
+         </div>`
+      ).join('');
+    }
+  }
+
+  // Show dropdown on focus or typing
+  inputEl.addEventListener('focus', () => {
+    renderDropdown(inputEl.value);
+    dropdownEl.classList.add('show');
+  });
+  inputEl.addEventListener('input', () => {
+    renderDropdown(inputEl.value);
+    dropdownEl.classList.add('show');
+  });
+
+  // Handle selection (use mousedown instead of click because blur fires first)
+  dropdownEl.addEventListener('mousedown', (e) => {
+    const item = e.target.closest('.autocomplete-item');
+    if (item && item.dataset.email) {
+      inputEl.value = item.dataset.email;
+      dropdownEl.classList.remove('show');
+    }
+  });
+
+  // Hide dropdown on blur
+  inputEl.addEventListener('blur', () => {
+    dropdownEl.classList.remove('show');
+  });
+
   $('m-cancel-member').addEventListener('click', closeModal);
   $('m-add-member').addEventListener('click', async () => {
     const email = $('m-email').value.trim();
@@ -789,6 +847,7 @@ function openCreateUserModal() {
         <label>Global Role</label>
         <select id="m-new-role">
           <option value="member">Member</option>
+          <option value="admin">Admin</option>
           <option value="superadmin">Superadmin</option>
         </select>
       </div>

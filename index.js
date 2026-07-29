@@ -1,8 +1,53 @@
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
-const fs = require('fs');
 const path = require("path");
 const { Server } = require("socket.io");
+const { Pool } = require("pg");
+
+// ── PostgreSQL Pool ───────────────────────────────────────────────────────
+const pgPool = new Pool({ connectionString: process.env.DATABASE_URL_PG });
+
+// Ensure the snapshots table exists on startup
+pgPool.query(`
+    CREATE TABLE IF NOT EXISTS file_snapshots (
+        file_id     TEXT        PRIMARY KEY,
+        data        TEXT        NOT NULL,
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+`).then(() => console.log("[pg] file_snapshots table ready"))
+  .catch(err => console.error("[pg] table init error:", err.message));
+
+async function loadSnapshot(fileId) {
+    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!safeFileId) return null;
+    try {
+        const res = await pgPool.query(
+            "SELECT data FROM file_snapshots WHERE file_id = $1",
+            [safeFileId]
+        );
+        return res.rows.length > 0 ? res.rows[0].data : null;
+    } catch (err) {
+        console.error("[pg] loadSnapshot error:", err.message);
+        return null;
+    }
+}
+
+async function saveSnapshot(fileId, data) {
+    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!safeFileId) return;
+    try {
+        await pgPool.query(
+            `INSERT INTO file_snapshots (file_id, data, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (file_id) DO UPDATE
+             SET data = EXCLUDED.data, updated_at = NOW()`,
+            [safeFileId, data]
+        );
+    } catch (err) {
+        console.error("[pg] saveSnapshot error:", err.message);
+    }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -28,27 +73,6 @@ const peerInfo = new Map();
 // Maps socket.id -> timestamp
 const lastUpdateAt = new Map();
 
-const SNAPSHOTS_DIR = path.join(__dirname, 'snapshots');
-if (!fs.existsSync(SNAPSHOTS_DIR)) {
-    fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
-}
-
-function loadSnapshot(fileId) {
-    // Sanitize fileId to prevent directory traversal
-    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
-    if (!safeFileId) return null;
-    const p = path.join(SNAPSHOTS_DIR, safeFileId + ".bin");
-    if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
-    return null;
-}
-
-function saveSnapshot(fileId, data) {
-    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
-    if (!safeFileId) return;
-    const p = path.join(SNAPSHOTS_DIR, safeFileId + ".bin");
-    fs.writeFileSync(p, data, "utf8");
-}
-
 function broadcastPresence(fileId) {
     const members = roomMembers.get(fileId);
     if (!members) return;
@@ -73,7 +97,7 @@ function broadcastPresence(fileId) {
 io.on("connection", (socket) => {
     console.log("[connect]", socket.id);
 
-    socket.on("join-file", ({ fileId }) => {
+    socket.on("join-file", async ({ fileId }) => {
         if (!fileId || typeof fileId !== 'string') return;
         
         socket.join(fileId);
@@ -88,8 +112,9 @@ io.on("connection", (socket) => {
 
         console.log(`[join-file] ${socket.id} joined ${fileId}`);
         
+        const snapshot = await loadSnapshot(fileId);
         socket.emit("approved", {
-            snapshot: loadSnapshot(fileId),
+            snapshot,
             salt: null // Salt will be fetched from API now
         });
         
@@ -122,21 +147,21 @@ io.on("connection", (socket) => {
         socket.to(info.fileId).emit("y-delta", payload);
     });
 
-    socket.on("y-snapshot", (payload) => {
+    socket.on("y-snapshot", async (payload) => {
         const info = peerInfo.get(socket.id);
         if (!info) return;
         
         if (!payload || typeof payload !== "string") return;
         if (payload.length > MAX_UPDATE_SIZE) return;
 
-        saveSnapshot(info.fileId, payload);
+        await saveSnapshot(info.fileId, payload);
     });
 
-    socket.on("request-sync", () => {
+    socket.on("request-sync", async () => {
         const info = peerInfo.get(socket.id);
         if (!info) return;
         
-        const snap = loadSnapshot(info.fileId);
+        const snap = await loadSnapshot(info.fileId);
         if (snap) {
             socket.emit("sync-response", { snapshot: snap });
         } else {
