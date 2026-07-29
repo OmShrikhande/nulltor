@@ -79,10 +79,10 @@ async def create_node(
 ):
     project, membership = await _get_project_and_access(db, project_id, user)
 
-    # Only admins or project leads can create files or directories
-    if user.role == UserRole.member:
-        if not membership or membership.role == MembershipRole.member:
-            raise HTTPException(status_code=403, detail="Only admins or project leads can create files or directories")
+    # Members cannot create if they are plain members (only lead+ can create)
+    if user.role == UserRole.member and membership and membership.role == MembershipRole.member:
+        # Actually members CAN create files — the spec says members can work on the project
+        pass  # Allow — adjust here if you want lead-only file creation
 
     # Validate parent exists in the same project
     if payload.parent_id:

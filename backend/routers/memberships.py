@@ -1,6 +1,4 @@
 import uuid
-import secrets
-import string
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,10 +17,15 @@ from services.audit_service import log_action
 router = APIRouter()
 
 
-async def _can_manage_members(db: AsyncSession, project_id: UUID, user: User) -> bool:
-    """Returns True if user can add/revoke members for this project."""
+async def _can_manage_members(db: AsyncSession, project_id: UUID, user: User) -> str | None:
+    """
+    Returns:
+      'superadmin' — user is superadmin (can assign any role including lead)
+      'lead'       — user is a project lead (can only add member-role users)
+      None         — user has no management rights
+    """
     if user.role == UserRole.superadmin:
-        return True
+        return "superadmin"
     membership = await db.execute(
         select(Membership).where(
             Membership.project_id == project_id,
@@ -30,7 +33,7 @@ async def _can_manage_members(db: AsyncSession, project_id: UUID, user: User) ->
             Membership.role == MembershipRole.lead,
         )
     )
-    return membership.scalar_one_or_none() is not None
+    return "lead" if membership.scalar_one_or_none() is not None else None
 
 
 @router.get("/{project_id}/members", response_model=list[MembershipWithUser], summary="List project members")
@@ -83,8 +86,17 @@ async def add_member(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not await _can_manage_members(db, project_id, user):
+    requester_level = await _can_manage_members(db, project_id, user)
+    if not requester_level:
         raise HTTPException(status_code=403, detail="Only superadmin or project leads can add members")
+
+    # Project leads (admins) can only add regular members — not other leads.
+    # Only superadmin can assign a lead (admin) role to a project.
+    if requester_level == "lead" and payload.role == MembershipRole.lead:
+        raise HTTPException(
+            status_code=403,
+            detail="Project leads can only add members, not other leads. Ask a superadmin to assign admins.",
+        )
 
     # Verify project
     proj_result = await db.execute(
@@ -93,48 +105,15 @@ async def add_member(
     if not proj_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Look up target user by email — auto-create if not found
+    # Look up target user by email — user must already exist
     from models.user import User as UserModel
     u_result = await db.execute(select(UserModel).where(UserModel.email == payload.email))
     target_user = u_result.scalar_one_or_none()
-    temp_password = None
 
     if not target_user:
-        # Auto-create the user with a temporary password
-        alphabet = string.ascii_letters + string.digits
-        temp_password = 'tmp-' + ''.join(secrets.choice(alphabet) for _ in range(10))
-        # Derive a username from the email prefix, ensure uniqueness
-        base_username = payload.email.split('@')[0][:32]
-        username = base_username
-        # Check username collision and append suffix if needed
-        attempt = 0
-        while True:
-            existing_un = await db.execute(select(UserModel).where(UserModel.username == username))
-            if not existing_un.scalar_one_or_none():
-                break
-            attempt += 1
-            username = f"{base_username[:29]}_{attempt}"
-
-        target_user = UserModel(
-            email=payload.email,
-            username=username,
-            hashed_password=get_password_hash(temp_password),
-            role=UserRole.member,
-            is_active=True,
-            requires_password_change=True,
-        )
-        db.add(target_user)
-        await db.flush()  # get target_user.id
-
-        await log_action(
-            db,
-            actor_id=user.id,
-            action=AuditAction.create,
-            resource_type=ResourceType.user,
-            resource_id=target_user.id,
-            project_id=project_id,
-            detail={"email": payload.email, "auto_created": True},
-            ip_address=get_client_ip(request),
+        raise HTTPException(
+            status_code=404,
+            detail=f"No account found for '{payload.email}'. Create the user first in User Management."
         )
 
     # Check not already a member
@@ -173,7 +152,7 @@ async def add_member(
 
     return MembershipInviteResponse(
         membership=MembershipRead.model_validate(membership),
-        temp_password=temp_password
+        temp_password=None
     )
 
 

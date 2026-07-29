@@ -1,53 +1,31 @@
-require("dotenv").config();
-const express = require("express");
-const http = require("http");
-const path = require("path");
+const express  = require("express");
+const http     = require("http");
+const path     = require("path");
+const fs       = require("fs");
+const { execFile, spawn } = require("child_process");
 const { Server } = require("socket.io");
-const { Pool } = require("pg");
 
-// ── PostgreSQL Pool ───────────────────────────────────────────────────────
-const pgPool = new Pool({ connectionString: process.env.DATABASE_URL_PG });
+// ── IDE workspace root ────────────────────────────────────────────────────────
+const IDE_WORKSPACE = path.join(__dirname, "ide-workspace");
+fs.mkdirSync(IDE_WORKSPACE, { recursive: true });
+const DEFAULT_PROJECT = path.join(IDE_WORKSPACE, "default");
+fs.mkdirSync(DEFAULT_PROJECT, { recursive: true });
 
-// Ensure the snapshots table exists on startup
-pgPool.query(`
-    CREATE TABLE IF NOT EXISTS file_snapshots (
-        file_id     TEXT        PRIMARY KEY,
-        data        TEXT        NOT NULL,
-        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-`).then(() => console.log("[pg] file_snapshots table ready"))
-  .catch(err => console.error("[pg] table init error:", err.message));
+// Languages allowed to execute (whitelist)
+const LANG_EXECUTORS = {
+    python:     { cmd: "python",   args: (f) => [f] },
+    javascript: { cmd: "node",     args: (f) => [f] },
+    shell:      { cmd: "bash",     args: (f) => [f] },
+    ruby:       { cmd: "ruby",     args: (f) => [f] },
+    go:         { cmd: "go",       args: (f) => ["run", f] },
+    php:        { cmd: "php",      args: (f) => [f] },
+};
 
-async function loadSnapshot(fileId) {
-    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
-    if (!safeFileId) return null;
-    try {
-        const res = await pgPool.query(
-            "SELECT data FROM file_snapshots WHERE file_id = $1",
-            [safeFileId]
-        );
-        return res.rows.length > 0 ? res.rows[0].data : null;
-    } catch (err) {
-        console.error("[pg] loadSnapshot error:", err.message);
-        return null;
-    }
-}
+// ── Per-file Yjs snapshot store (in-memory, ephemeral) ───────────────────────
+const fileSnapshots = new Map();  // fileId → encrypted snapshot string
 
-async function saveSnapshot(fileId, data) {
-    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
-    if (!safeFileId) return;
-    try {
-        await pgPool.query(
-            `INSERT INTO file_snapshots (file_id, data, updated_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT (file_id) DO UPDATE
-             SET data = EXCLUDED.data, updated_at = NOW()`,
-            [safeFileId, data]
-        );
-    } catch (err) {
-        console.error("[pg] saveSnapshot error:", err.message);
-    }
-}
+// ── Active run processes ──────────────────────────────────────────────────────
+const runProcesses = new Map();   // pid → ChildProcess
 
 const app = express();
 const server = http.createServer(app);
@@ -57,85 +35,159 @@ const io = new Server(server, {
     pingInterval: 25000
 });
 
-// ── Static Files ─────────────────────────────────────────────────────────
 app.use(express.static("public"));
 app.use("/vendor/crypto-js", express.static(path.join(__dirname, "node_modules/crypto-js")));
 app.use("/vendor/yjs", express.static(path.join(__dirname, "node_modules/yjs/dist")));
+app.use("/vendor/lib0", (req, res, next) => {
+    if (!path.extname(req.path)) {
+        req.url = req.url + ".js";
+    }
+    next();
+}, express.static(path.join(__dirname, "node_modules/lib0")));
+
+// ── Dashboard SPA ────────────────────────────────────────────────────────────
+app.use("/dashboard", express.static(path.join(__dirname, "public/dashboard")));
+app.use("/dashboard", (_req, res) => {
+    res.sendFile(path.join(__dirname, "public/dashboard/index.html"));
+});
+
+// ── IDE SPA ───────────────────────────────────────────────────────────────────
+app.use("/ide", express.static(path.join(__dirname, "public/ide")));
+app.get("/ide", (_req, res) => {
+    res.sendFile(path.join(__dirname, "public/ide/index.html"));
+});
 
 const MAX_UPDATE_SIZE = 512 * 1024;
 const RATE_LIMIT_MS = 16;
-const MAX_PEERS = 32;
+const MAX_PEERS = 16;
 
-// Maps fileId -> Set of socket IDs
-const roomMembers = new Map();
-// Maps socket.id -> { fileId, name, color }
-const peerInfo = new Map();
-// Maps socket.id -> timestamp
+let hostId = null;
+const approvedUsers = new Set();
+const peerMeta = new Map();
 const lastUpdateAt = new Map();
 
-function broadcastPresence(fileId) {
-    const members = roomMembers.get(fileId);
-    if (!members) return;
+let encryptedSnapshot = null;
+let roomSalt = null;
+const pendingJoinRequests = new Map();
 
-    const uniquePeers = new Map();
-    [...members].forEach((id) => {
-        const info = peerInfo.get(id) || {};
-        const name = info.name || "Peer";
-        if (!uniquePeers.has(name)) {
-            uniquePeers.set(name, {
-                id,
-                name: name,
-                isHost: false,
-                color: info.color || "#6366f1"
-            });
-        }
-    });
+function roomInfoPayload() {
+    return {
+        exists: roomSalt !== null,
+        salt: roomSalt
+    };
+}
 
-    io.to(fileId).emit("presence", { peers: Array.from(uniquePeers.values()), hostId: null });
+function broadcastRoomInfo() {
+    io.emit("room-info", roomInfoPayload());
+}
+
+function broadcastPresence() {
+    const peers = [...approvedUsers].map((id) => ({
+        id,
+        name: peerMeta.get(id)?.name || "Peer",
+        isHost: id === hostId,
+        color: peerMeta.get(id)?.color || "#6366f1"
+    }));
+
+    io.to([...approvedUsers]).emit("presence", { peers, hostId });
+}
+
+function electNewHost() {
+    const next = [...approvedUsers].find((id) => id !== hostId);
+    if (next) {
+        hostId = next;
+        io.to(next).emit("host-promoted");
+        broadcastPresence();
+        console.log("New host:", next);
+    } else {
+        hostId = null;
+        approvedUsers.clear();
+        peerMeta.clear();
+        encryptedSnapshot = null;
+        roomSalt = null;
+        console.log("Room empty — state cleared");
+    }
 }
 
 io.on("connection", (socket) => {
-    console.log("[connect]", socket.id);
+    console.log("[connect]", socket.id, "from", socket.handshake.address);
 
-    socket.on("join-file", async ({ fileId }) => {
-        if (!fileId || typeof fileId !== 'string') return;
-        
-        socket.join(fileId);
-        peerInfo.set(socket.id, { fileId, name: "Peer", color: "#6366f1" });
-        
-        let members = roomMembers.get(fileId);
-        if (!members) {
-            members = new Set();
-            roomMembers.set(fileId, members);
+    if (!hostId) {
+        hostId = socket.id;
+        approvedUsers.add(socket.id);
+        socket.emit("host");
+        console.log("[host]", socket.id);
+    } else if (approvedUsers.size >= MAX_PEERS) {
+        console.log("[reject] room full", socket.id);
+        socket.emit("rejected", { reason: "Room is full" });
+        return;
+    } else {
+        console.log("[guest]", socket.id, "room exists:", roomSalt !== null);
+        socket.emit("guest", roomInfoPayload());
+        io.to(hostId).emit("join-request", { id: socket.id, name: "Guest" });
+        pendingJoinRequests.set(socket.id, Date.now());
+    }
+
+    socket.on("create-room", ({ salt }) => {
+        console.log("[create-room]", socket.id, "salt:", !!salt);
+        if (!hostId || approvedUsers.size <= 1) {
+            hostId = socket.id;
+            approvedUsers.add(socket.id);
         }
-        members.add(socket.id);
+        if (socket.id !== hostId) {
+            console.log("[create-room] denied — not host");
+            socket.emit("rejected", { reason: "Only the host can create a room." });
+            return;
+        }
+        if (!salt || typeof salt !== "string" || salt.length > 128) {
+            console.log("[create-room] denied — bad salt");
+            return;
+        }
 
-        console.log(`[join-file] ${socket.id} joined ${fileId}`);
-        
-        const snapshot = await loadSnapshot(fileId);
-        socket.emit("approved", {
-            snapshot,
-            salt: null // Salt will be fetched from API now
-        });
-        
-        broadcastPresence(fileId);
+        roomSalt = salt;
+        socket.emit("room-created", roomInfoPayload());
+        broadcastRoomInfo();
+        console.log("[room-created] salt stored");
+    });
+
+    socket.on("get-room-info", (ack) => {
+        console.log("[get-room-info]", socket.id);
+        if (typeof ack === "function") ack(roomInfoPayload());
     });
 
     socket.on("register-peer", ({ name, color }) => {
-        const info = peerInfo.get(socket.id);
-        if (!info) return;
+        if (!approvedUsers.has(socket.id)) return;
 
-        info.name = String(name || "Peer").slice(0, 32);
-        info.color = String(color || "#6366f1").slice(0, 7);
-        peerInfo.set(socket.id, info);
-        
-        broadcastPresence(info.fileId);
+        peerMeta.set(socket.id, {
+            name: String(name || "Peer").slice(0, 32),
+            color: String(color || "#6366f1").slice(0, 7)
+        });
+        broadcastPresence();
+    });
+
+    socket.on("approve-user", (id) => {
+        if (socket.id !== hostId || !pendingJoinRequests.has(id)) return;
+
+        pendingJoinRequests.delete(id);
+        approvedUsers.add(id);
+
+        io.to(id).emit("approved", {
+            snapshot: encryptedSnapshot,
+            salt: roomSalt
+        });
+
+        broadcastPresence();
+        console.log("Approved:", id);
+    });
+
+    socket.on("reject-user", (id) => {
+        if (socket.id !== hostId) return;
+        pendingJoinRequests.delete(id);
+        io.to(id).emit("rejected", { reason: "Host denied access" });
     });
 
     socket.on("y-delta", (payload) => {
-        const info = peerInfo.get(socket.id);
-        if (!info) return;
-        
+        if (!approvedUsers.has(socket.id)) return;
         if (!payload || typeof payload !== "string") return;
         if (payload.length > MAX_UPDATE_SIZE) return;
 
@@ -144,34 +196,30 @@ io.on("connection", (socket) => {
         if (now - last < RATE_LIMIT_MS) return;
         lastUpdateAt.set(socket.id, now);
 
-        socket.to(info.fileId).emit("y-delta", payload);
+        socket.broadcast.emit("y-delta", payload);
     });
 
-    socket.on("y-snapshot", async (payload) => {
-        const info = peerInfo.get(socket.id);
-        if (!info) return;
-        
+    socket.on("y-snapshot", (payload) => {
+        if (!approvedUsers.has(socket.id)) return;
         if (!payload || typeof payload !== "string") return;
         if (payload.length > MAX_UPDATE_SIZE) return;
 
-        await saveSnapshot(info.fileId, payload);
+        encryptedSnapshot = payload;
     });
 
-    socket.on("request-sync", async () => {
-        const info = peerInfo.get(socket.id);
-        if (!info) return;
-        
-        const snap = await loadSnapshot(info.fileId);
-        if (snap) {
-            socket.emit("sync-response", { snapshot: snap });
+    socket.on("request-sync", () => {
+        if (!approvedUsers.has(socket.id)) return;
+
+        if (encryptedSnapshot) {
+            socket.emit("sync-response", { snapshot: encryptedSnapshot });
         } else {
-            socket.to(info.fileId).emit("sync-needed", { requesterId: socket.id });
+            socket.broadcast.emit("sync-needed", { requesterId: socket.id });
         }
     });
 
     socket.on("y-sync-offer", ({ targetId, payload }) => {
-        const info = peerInfo.get(socket.id);
-        if (!info) return;
+        if (!approvedUsers.has(socket.id)) return;
+        if (!approvedUsers.has(targetId)) return;
         if (!payload || typeof payload !== "string") return;
         if (payload.length > MAX_UPDATE_SIZE) return;
 
@@ -179,40 +227,438 @@ io.on("connection", (socket) => {
     });
 
     socket.on("awareness-update", (payload) => {
-        const info = peerInfo.get(socket.id);
-        if (!info) return;
+        if (!approvedUsers.has(socket.id)) return;
         if (!payload || typeof payload !== "string") return;
         if (payload.length > 8192) return;
 
-        socket.to(info.fileId).emit("awareness-update", {
+        socket.broadcast.emit("awareness-update", {
             from: socket.id,
             payload
         });
     });
 
-    socket.on("disconnect", () => {
-        const info = peerInfo.get(socket.id);
-        if (info) {
-            const members = roomMembers.get(info.fileId);
-            if (members) {
-                members.delete(socket.id);
-                if (members.size === 0) {
-                    roomMembers.delete(info.fileId);
-                } else {
-                    broadcastPresence(info.fileId);
-                }
-            }
-            io.to(info.fileId).emit("peer-left", { id: socket.id });
+    // ── IDE: File Operations ──────────────────────────────────────────────────
+
+    socket.on("file:list", ({ projectId } = {}) => {
+        if (!approvedUsers.has(socket.id)) return;
+        const projectDir = _safeProjectDir(projectId);
+        try {
+            const tree = _buildTree(projectDir, projectDir);
+            socket.emit("file:listed", { tree });
+            socket.emit("file:tree-update", { tree });
+        } catch (e) {
+            console.error("[file:list]", e.message);
         }
-        
-        peerInfo.delete(socket.id);
+    });
+
+    socket.on("file:read", ({ fileId }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!fileId) return;
+        const filePath = _safeFilePath(fileId);
+        if (!filePath) return;
+        try {
+            const content = fs.readFileSync(filePath, "utf8");
+            const name    = path.basename(filePath);
+            socket.emit("file:read-result", { fileId, name, path: filePath, content });
+        } catch (e) {
+            socket.emit("file:read-result", { fileId, error: e.message });
+        }
+    });
+
+    socket.on("file:write", ({ fileId, content }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!fileId || content === undefined) return;
+        if (content.length > 2 * 1024 * 1024) return; // 2 MB limit
+        const filePath = _safeFilePath(fileId);
+        if (!filePath) return;
+        try {
+            fs.writeFileSync(filePath, content, "utf8");
+            socket.emit("file:write-result", { fileId, ok: true });
+            // Refresh tree for all peers
+            const tree = _buildTree(DEFAULT_PROJECT, DEFAULT_PROJECT);
+            io.to([...approvedUsers]).emit("file:tree-update", { tree });
+        } catch (e) {
+            socket.emit("file:write-result", { fileId, ok: false, error: e.message });
+        }
+    });
+
+    socket.on("file:create", ({ name, type, parentId, projectId } = {}) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!name || /[\/\\:*?"<>|]/.test(name)) return;
+        const projectDir = _safeProjectDir(projectId);
+        const parentDir  = parentId ? _safeFilePath(parentId) : projectDir;
+        if (!parentDir) return;
+        const newPath = path.join(parentDir, name);
+        if (!newPath.startsWith(IDE_WORKSPACE)) return;
+        try {
+            if (type === "directory") {
+                fs.mkdirSync(newPath, { recursive: true });
+            } else {
+                fs.writeFileSync(newPath, "", { flag: "wx" });
+            }
+            const tree = _buildTree(projectDir, projectDir);
+            io.to([...approvedUsers]).emit("file:tree-update", { tree });
+        } catch (e) {
+            console.error("[file:create]", e.message);
+        }
+    });
+
+    socket.on("file:rename", ({ nodeId, name }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!name || /[\/\\:*?"<>|]/.test(name)) return;
+        const oldPath = _safeFilePath(nodeId);
+        if (!oldPath) return;
+        const newPath = path.join(path.dirname(oldPath), name);
+        if (!newPath.startsWith(IDE_WORKSPACE)) return;
+        try {
+            fs.renameSync(oldPath, newPath);
+            const tree = _buildTree(DEFAULT_PROJECT, DEFAULT_PROJECT);
+            io.to([...approvedUsers]).emit("file:tree-update", { tree });
+        } catch (e) {
+            console.error("[file:rename]", e.message);
+        }
+    });
+
+    socket.on("file:delete", ({ nodeId }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        const filePath = _safeFilePath(nodeId);
+        if (!filePath) return;
+        try {
+            fs.rmSync(filePath, { recursive: true, force: true });
+            const tree = _buildTree(DEFAULT_PROJECT, DEFAULT_PROJECT);
+            io.to([...approvedUsers]).emit("file:tree-update", { tree });
+        } catch (e) {
+            console.error("[file:delete]", e.message);
+        }
+    });
+
+    socket.on("file:upload", ({ name, content, parentId, projectId } = {}) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!name || /[\/\\:*?"<>|]/.test(name)) return;
+        const projectDir = _safeProjectDir(projectId);
+        const parentDir  = parentId ? _safeFilePath(parentId) : projectDir;
+        if (!parentDir) return;
+        const newPath = path.join(parentDir, name);
+        if (!newPath.startsWith(IDE_WORKSPACE)) return;
+        try {
+            if (typeof content === "string") {
+                fs.writeFileSync(newPath, content, "utf8");
+            } else if (content) {
+                fs.writeFileSync(newPath, Buffer.from(content));
+            }
+            const tree = _buildTree(projectDir, projectDir);
+            io.to([...approvedUsers]).emit("file:tree-update", { tree });
+            console.log(`[file:upload] Uploaded ${name}`);
+        } catch (e) {
+            console.error("[file:upload]", e.message);
+        }
+    });
+
+    // ── IDE: Per-file CRDT ────────────────────────────────────────────────────
+
+    socket.on("file:y-delta", ({ fileId, payload }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!fileId || !payload || typeof payload !== "string") return;
+        if (payload.length > MAX_UPDATE_SIZE) return;
+        // Store as snapshot (last write wins for late joiners)
+        fileSnapshots.set(fileId, payload);
+        socket.broadcast.emit("file:y-delta", { fileId, payload });
+    });
+
+    socket.on("file:y-snapshot", ({ fileId, payload }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!fileId || !payload || typeof payload !== "string") return;
+        if (payload.length > MAX_UPDATE_SIZE) return;
+        fileSnapshots.set(fileId, payload);
+    });
+
+    socket.on("file:y-request", ({ fileId }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        const snapshot = fileSnapshots.get(fileId);
+        if (snapshot) {
+            socket.emit("file:y-state", { fileId, payload: snapshot });
+        }
+    });
+
+    // ── IDE: Code Execution & Compilation ─────────────────────────────────────
+
+    socket.on("run:execute", ({ fileId, lang, content }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!fileId) return;
+
+        const filePath = _safeFilePath(fileId);
+        if (!filePath) {
+            socket.emit("run:error", { message: "Invalid file path." });
+            return;
+        }
+
+        // Auto-save content if supplied
+        if (typeof content === "string") {
+            try { fs.writeFileSync(filePath, content, "utf8"); } catch {}
+        }
+
+        if (!fs.existsSync(filePath)) {
+            socket.emit("run:error", { message: "File not found. Save the file first." });
+            return;
+        }
+
+        const ext  = path.extname(filePath).toLowerCase();
+        const dir  = path.dirname(filePath);
+        const base = path.basename(filePath, ext);
+        const detected = lang || _detectLangFromExt(ext);
+
+        let command = "";
+        switch (detected) {
+            case "c":
+                command = `gcc "${filePath}" -o "${path.join(dir, base)}.exe" && "${path.join(dir, base)}.exe"`;
+                break;
+            case "cpp":
+                command = `g++ "${filePath}" -o "${path.join(dir, base)}.exe" && "${path.join(dir, base)}.exe"`;
+                break;
+            case "java":
+                command = `javac "${filePath}" && java -cp "${dir}" ${base}`;
+                break;
+            case "python":
+                command = `python "${filePath}"`;
+                break;
+            case "javascript":
+                command = `node "${filePath}"`;
+                break;
+            case "typescript":
+                command = `npx ts-node "${filePath}"`;
+                break;
+            case "go":
+                command = `go run "${filePath}"`;
+                break;
+            case "rust":
+                command = `rustc "${filePath}" -o "${path.join(dir, base)}.exe" && "${path.join(dir, base)}.exe"`;
+                break;
+            default:
+                command = `node "${filePath}"`;
+        }
+
+        const startTime = Date.now();
+        let proc;
+        try {
+            proc = spawn(command, [], {
+                cwd:   dir,
+                shell: true,
+                timeout: 30000,
+            });
+        } catch (e) {
+            socket.emit("run:error", { message: `Failed to start execution: ${e.message}` });
+            return;
+        }
+
+        runProcesses.set(proc.pid, proc);
+        socket.emit("run:started", { pid: proc.pid });
+        console.log(`[run] PID=${proc.pid} lang=${detected} file=${path.basename(filePath)}`);
+
+        proc.stdout.on("data", (d) => socket.emit("run:output", { data: d.toString() }));
+        proc.stderr.on("data", (d) => socket.emit("run:output", { data: d.toString() }));
+
+        proc.on("close", (code) => {
+            runProcesses.delete(proc.pid);
+            socket.emit("run:exit", { code, elapsed: Date.now() - startTime });
+            console.log(`[run] PID=${proc.pid} exited with code ${code}`);
+        });
+
+        proc.on("error", (err) => {
+            runProcesses.delete(proc?.pid);
+            socket.emit("run:error", { message: err.message });
+        });
+    });
+
+    socket.on("run:compile", ({ fileId, lang, content }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        if (!fileId) return;
+
+        const filePath = _safeFilePath(fileId);
+        if (!filePath) return;
+
+        if (typeof content === "string") {
+            try { fs.writeFileSync(filePath, content, "utf8"); } catch {}
+        }
+
+        const ext  = path.extname(filePath).toLowerCase();
+        const dir  = path.dirname(filePath);
+        const base = path.basename(filePath, ext);
+        const detected = lang || _detectLangFromExt(ext);
+
+        let command = "";
+        switch (detected) {
+            case "c":    command = `gcc -c "${filePath}" -o "${path.join(dir, base)}.o"`; break;
+            case "cpp":  command = `g++ -c "${filePath}" -o "${path.join(dir, base)}.o"`; break;
+            case "java": command = `javac "${filePath}"`; break;
+            case "rust": command = `rustc --emit=obj "${filePath}"`; break;
+            default:
+                socket.emit("run:output", { data: `[Compile] ${detected} does not require a separate compilation step.\n` });
+                socket.emit("run:exit", { code: 0, elapsed: 0 });
+                return;
+        }
+
+        const startTime = Date.now();
+        let proc;
+        try {
+            proc = spawn(command, [], { cwd: dir, shell: true, timeout: 30000 });
+        } catch (e) {
+            socket.emit("run:error", { message: `Compile failed: ${e.message}` });
+            return;
+        }
+
+        socket.emit("run:started", { pid: proc.pid });
+        console.log(`[compile] lang=${detected} file=${path.basename(filePath)}`);
+
+        proc.stdout.on("data", (d) => socket.emit("run:output", { data: d.toString() }));
+        proc.stderr.on("data", (d) => socket.emit("run:output", { data: d.toString() }));
+
+        proc.on("close", (code) => {
+            if (code === 0) socket.emit("run:output", { data: `\x1b[32m✔ Compilation successful!\x1b[0m\n` });
+            socket.emit("run:exit", { code, elapsed: Date.now() - startTime });
+        });
+    });
+
+    socket.on("run:kill", ({ pid }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        const proc = runProcesses.get(pid);
+        if (proc) {
+            proc.kill("SIGTERM");
+            setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 2000);
+        }
+    });
+
+    // ── IDE: Terminal PTY (simple streaming bridge) ───────────────────────────
+
+    socket.on("terminal:spawn", ({ termId, cwd } = {}) => {
+        if (!approvedUsers.has(socket.id)) return;
+        const safeDir = _safeProjectDir(cwd) || DEFAULT_PROJECT;
+        const shell   = process.platform === "win32" ? "powershell.exe" : "bash";
+        let proc;
+        try {
+            proc = spawn(shell, [], { cwd: safeDir, shell: false, windowsHide: true });
+        } catch (e) {
+            socket.emit("run:output", { termId, data: `\x1b[31mFailed to start shell: ${e.message}\x1b[0m\r\n` });
+            return;
+        }
+        runProcesses.set(`t-${socket.id}-${termId}`, proc);
+        proc.stdout.on("data", (d) => socket.emit("run:output", { termId, data: d.toString() }));
+        proc.stderr.on("data", (d) => socket.emit("run:output", { termId, data: d.toString() }));
+        proc.on("close", (code) => {
+            runProcesses.delete(`t-${socket.id}-${termId}`);
+            socket.emit("run:output", { termId, data: `\r\n\x1b[90m[Shell exited ${code}]\x1b[0m\r\n` });
+        });
+    });
+
+    socket.on("terminal:input", ({ termId, data }) => {
+        if (!approvedUsers.has(socket.id)) return;
+        const proc = runProcesses.get(`t-${socket.id}-${termId}`);
+        proc?.stdin?.write(data);
+    });
+
+    socket.on("terminal:kill", ({ termId }) => {
+        const proc = runProcesses.get(`t-${socket.id}-${termId}`);
+        if (proc) { proc.kill(); runProcesses.delete(`t-${socket.id}-${termId}`); }
+    });
+
+    // ── Disconnect (existing + cleanup run processes) ─────────────────────────
+
+    socket.on("disconnect", () => {
+        pendingJoinRequests.delete(socket.id);
+        approvedUsers.delete(socket.id);
+        peerMeta.delete(socket.id);
         lastUpdateAt.delete(socket.id);
-        
+
+        // Kill any running processes owned by this socket
+        for (const [key, proc] of runProcesses.entries()) {
+            if (String(key).includes(socket.id)) {
+                try { proc.kill(); } catch {}
+                runProcesses.delete(key);
+            }
+        }
+
+        if (socket.id === hostId) {
+            electNewHost();
+        } else {
+            broadcastPresence();
+        }
+
+        io.emit("peer-left", { id: socket.id });
         console.log("Disconnected:", socket.id);
     });
 });
 
 const PORT = process.env.PORT || 3000;
+
+// ── IDE Helper Functions ──────────────────────────────────────────────────────
+
+function _detectLangFromExt(ext) {
+    const m = {
+        ".c": "c", ".cpp": "cpp", ".h": "cpp", ".hpp": "cpp",
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".java": "java", ".go": "go", ".rs": "rust", ".sh": "shell",
+        ".rb": "ruby", ".php": "php"
+    };
+    return m[ext?.toLowerCase()] || "javascript";
+}
+
+/**
+ * Resolve a projectId to a safe directory inside IDE_WORKSPACE.
+ * Prevents path traversal attacks.
+ */
+function _safeProjectDir(projectId) {
+    const safeId = (projectId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+    const dir    = path.join(IDE_WORKSPACE, safeId);
+    if (!dir.startsWith(IDE_WORKSPACE)) return DEFAULT_PROJECT;
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+/**
+ * Resolve a fileId (which is a relative path from workspace root) to an absolute path.
+ * Returns null if the resolved path escapes the workspace.
+ */
+function _safeFilePath(fileId) {
+    if (!fileId) return null;
+    // fileId format: "default/path/to/file.py"  or just an absolute path stored earlier
+    const resolved = fileId.startsWith(IDE_WORKSPACE)
+        ? fileId
+        : path.join(IDE_WORKSPACE, fileId);
+    if (!resolved.startsWith(IDE_WORKSPACE)) return null;
+    return resolved;
+}
+
+/**
+ * Recursively build a file-tree JSON from a directory.
+ * Each node: { id, name, type, path, children? }
+ * id = relative path from IDE_WORKSPACE root (used as fileId).
+ */
+function _buildTree(dir, rootDir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { return []; }
+
+    return entries
+        .filter(e => !e.name.startsWith("."))   // hide dotfiles
+        .sort((a, b) => {
+            // Directories first, then files
+            if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        })
+        .map(e => {
+            const absPath = path.join(dir, e.name);
+            const nodeId  = absPath; // absolute path used as fileId
+            if (e.isDirectory()) {
+                return {
+                    id:       nodeId,
+                    name:     e.name,
+                    type:     "directory",
+                    path:     absPath,
+                    children: _buildTree(absPath, rootDir),
+                };
+            }
+            return { id: nodeId, name: e.name, type: "file", path: absPath };
+        });
+}
 
 server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
@@ -227,7 +673,8 @@ server.on("error", (err) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Secure LAN Notepad → http://0.0.0.0:${PORT}`);
-    console.log(`On this PC: http://127.0.0.1:${PORT}`);
-    console.log(`On LAN:     http://192.168.31.101:${PORT}`);
+    console.log(`\n◈  Nullator Server`);
+    console.log(`   Notepad: http://127.0.0.1:${PORT}/`);
+    console.log(`   IDE:     http://127.0.0.1:${PORT}/ide/`);
+    console.log(`   Dashboard: http://127.0.0.1:${PORT}/dashboard/\n`);
 });

@@ -2,7 +2,8 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
+from pydantic import BaseModel
 
 from core.database import get_db
 from core.security import get_password_hash
@@ -15,19 +16,37 @@ from services.audit_service import log_action
 router = APIRouter()
 
 
-@router.get("/search", summary="Search users for dropdown (authenticated)")
+class UserSearchResult(BaseModel):
+    """Minimal user info returned by the search endpoint — safe for all authenticated users."""
+    id: UUID
+    username: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/search", response_model=list[UserSearchResult], summary="Search users by email or username (any authenticated user)")
 async def search_users(
-    q: Optional[str] = None,
+    q: str = Query(..., min_length=2, description="Email or username to search for"),
     db: AsyncSession = Depends(get_db),
-    _actor: User = Depends(get_current_user),
+    _user: User = Depends(get_current_user),  # any logged-in user
 ):
-    stmt = select(User.email, User.username).where(User.is_active == True)
-    if q:
-        stmt = stmt.where((User.email.ilike(f"%{q}%")) | (User.username.ilike(f"%{q}%")))
-    
-    result = await db.execute(stmt.order_by(User.username).limit(50))
-    users = result.all()
-    return [{"email": u.email, "username": u.username} for u in users]
+    """
+    Returns up to 10 matching users (id, username, email only).
+    Used by project leads to find a user before adding them as a member.
+    """
+    like = f"%{q}%"
+    result = await db.execute(
+        select(User)
+        .where(
+            User.is_active == True,
+            or_(User.email.ilike(like), User.username.ilike(like)),
+        )
+        .limit(10)
+    )
+    users = result.scalars().all()
+    return [UserSearchResult(id=u.id, username=u.username, email=u.email) for u in users]
+
 
 
 @router.get("", response_model=UserList, summary="List all users (superadmin)")
