@@ -217,6 +217,65 @@ async def create_branch(
     if payload.type == BranchType.subroom:
         db.add(BranchMember(branch_id=branch.id, user_id=user.id, granted_by=user.id))
 
+    # Perform Deep Copy (Fork) if parent_branch_id provided
+    if payload.parent_branch_id:
+        from models.directory import Directory
+        from sqlalchemy import text
+        import uuid
+
+        # 1. Fetch directories of parent branch
+        dir_rows = await db.execute(
+            select(Directory).where(
+                Directory.project_id == project_id,
+                Directory.branch_id == payload.parent_branch_id
+            )
+        )
+        old_dirs = dir_rows.scalars().all()
+
+        if old_dirs:
+            # 2. Map old_id -> new_id
+            id_map = {d.id: uuid.uuid4() for d in old_dirs}
+            
+            # 3. Insert copied directories
+            new_dirs = []
+            for d in old_dirs:
+                nd = Directory(
+                    id=id_map[d.id],
+                    project_id=d.project_id,
+                    parent_id=id_map[d.parent_id] if d.parent_id and d.parent_id in id_map else None,
+                    branch_id=branch.id,
+                    name=d.name,
+                    type=d.type,
+                    snapshot_path=d.snapshot_path,
+                    created_by=user.id,
+                    updated_by=user.id
+                )
+                new_dirs.append(nd)
+            db.add_all(new_dirs)
+            await db.flush()
+
+            # 4. Copy file_snapshots via raw SQL
+            copy_params = [
+                {
+                    "new_id": str(new_id),
+                    "new_branch": str(branch.id),
+                    "old_id": str(old_id),
+                    "old_branch": str(payload.parent_branch_id)
+                }
+                for old_id, new_id in id_map.items()
+            ]
+            
+            if copy_params:
+                await db.execute(
+                    text("""
+                        INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                        SELECT :new_id, :new_branch, data, NOW()
+                        FROM file_snapshots
+                        WHERE file_id = :old_id AND branch_id = :old_branch
+                    """),
+                    copy_params
+                )
+
     await log_action(
         db,
         actor_id=user.id,

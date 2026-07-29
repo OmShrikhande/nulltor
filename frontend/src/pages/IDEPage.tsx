@@ -143,11 +143,9 @@ export function IDEPage() {
       );
 
       if (!privateBranch) {
-        const main = bl.items.find(b => b.type === 'main');
         privateBranch = await branchesApi.create(projectId, {
           name: branchName,
           type: 'private',
-          parent_branch_id: main?.id,
         });
       }
 
@@ -230,9 +228,15 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         setProject(project);
         setBranches(bl.items);
 
-        // Default to main branch
-        const main = bl.items.find((b) => b.type === 'main') ?? bl.items[0];
-        if (main && !currentBranch) setBranch(main);
+        // Default to main branch, or a saved private branch if present
+        let defaultBranch = bl.items.find((b) => b.type === 'main');
+        const savedPrivateBranchId = sessionStorage.getItem(`privatebranch-${projectId}`);
+        if (savedPrivateBranchId) {
+          const pb = bl.items.find(b => b.id === savedPrivateBranchId);
+          if (pb) defaultBranch = pb;
+        }
+        
+        if (defaultBranch && !currentBranch) setBranch(defaultBranch);
       } catch (e) {
         toast('Failed to load project', 'error');
         navigate('/dashboard');
