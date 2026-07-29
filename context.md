@@ -1,26 +1,48 @@
-# Secure LAN Notepad Context
+# Nulltor IDE Architecture Context
 
 ## Project Overview
-A shared offline notepad designed for two or more PCs on the same Wi-Fi / LAN network. It allows users to write notes synchronously with end-to-end encryption. The text is encrypted in the browser before being sent, ensuring the server only relays encrypted data.
+Nulltor has evolved from a simple offline notepad into a full local-network IDE combining VS Code-style editing with GitHub-style project management. It retains its core end-to-end encrypted (E2EE) real-time collaboration engine, ensuring the server never sees plaintext data.
 
 ## Architecture
-- **Backend:** Node.js server using Express for serving static files and Socket.IO for real-time WebSocket communication.
-- **Frontend:** Vanilla HTML, CSS, and JavaScript (located in the `public/` directory).
-- **Real-time Sync:** Uses `yjs` (CRDT - Conflict-free Replicated Data Type) to handle concurrent edits seamlessly between multiple clients.
-- **Encryption:** AES encryption (using CryptoJS) is done entirely on the client side. The server never sees the plaintext, only the encrypted strings.
+The system consists of three main components:
 
-## Directory Structure
-- `index.js`: The entry point for the Node.js server. It sets up Express, Socket.IO, handles room creation, host/guest role management, host approval, and broadcasting encrypted Yjs updates (`y-delta` and `y-snapshot`).
-- `package.json`: Contains project metadata, npm scripts, and dependencies (like `express`, `socket.io`, `yjs`, `crypto-js`).
-- `public/`: Contains the frontend UI and logic.
-  - `index.html`: The main user interface, including normal, mask, and cipher view modes.
-  - `app.js`: Main client-side logic for room management and UI interaction.
-  - `collab.js`: Collaboration logic, bridging Yjs and Socket.IO.
-  - `crypto.js`: Handles PBKDF2 key derivation and AES encryption/decryption.
-  - `style.css`: Stylesheet for the application.
+1. **FastAPI Backend (`backend/`)**
+   - Handles REST API for user authentication, project management, directory tree navigation, and audit logs.
+   - Manages the GitHub-style branching model (`main`, `subroom`, `private`) and merge request workflows.
+   - Uses PostgreSQL (via async SQLAlchemy) to store structured relational data.
+   - Runs on port `8000`.
+
+2. **Node.js Sync Server (`index.js`)**
+   - Serves as the high-throughput WebSocket server via Socket.IO for real-time collaboration.
+   - Relays encrypted Yjs CRDT payloads between clients.
+   - Persists encrypted Yjs document snapshots to the PostgreSQL `file_snapshots` table for durability.
+   - Handles branch-scoped rooms (`fileId::branchId`) so each branch maintains an independent edit history.
+   - Runs on port `3000`.
+
+3. **React Frontend (`frontend/`)**
+   - Built with Vite, React, TypeScript, and Zustand (for state management).
+   - Features a VS Code-style three-pane UI: File Explorer, Monaco Editor, and (upcoming) AI Agent panel.
+   - Manages client-side AES encryption/decryption using CryptoJS (PBKDF2 key derivation).
+   - Handles CRDT conflict resolution in the browser using `yjs` and `y-monaco`.
+   - Runs on port `5173` (dev) or served statically in production.
 
 ## Key Concepts
-- **Host:** The first user to connect to the server becomes the host. The host sets the room key (passphrase) and must explicitly approve joining guests.
-- **Guest:** Secondary users who connect. They must enter the exact same room key and wait for the host's approval.
-- **End-to-End Encryption (E2EE):** The host's browser generates a random salt and sends it to the server. Guests fetch this salt and use it along with the shared room key to derive the same AES key (via PBKDF2).
-- **Data Flow:** Keystroke -> Yjs creates delta -> Browser encrypts delta -> Socket.IO emits `y-delta` -> Server broadcasts -> Other browser receives -> Decrypts -> Applies delta to local Yjs document -> UI updates.
+
+- **Branching Model:** 
+  - `main`: The shared canonical room visible to all project members.
+  - `subroom`: A collaborative feature branch that specific members can be invited to.
+  - `private`: A personal fork visible only to the creator.
+- **Merge Workflow:** Users initiate a merge from a source branch to a target branch. The browser performs a local CRDT merge, and an encrypted snapshot is saved as a pending merge request. Project leads review and confirm the merge.
+- **End-to-End Encryption (E2EE):** The server only relays and stores base64-encoded encrypted strings. Decryption requires the project's shared passphrase/salt, which is never transmitted to the server.
+- **Directory Tree:** Files and folders are organized hierarchically and scoped by `branch_id`.
+
+## Database Schema (PostgreSQL)
+- `users`: User accounts and roles (`superadmin`, `admin`, `member`).
+- `projects`: Top-level workspaces.
+- `memberships`: User-to-project access control (`lead`, `member`).
+- `branches`: Branches within a project (`main`, `subroom`, `private`).
+- `branch_members`: Access control for `subroom` branches.
+- `directories`: The file/folder tree, scoped by branch.
+- `merge_requests`: Lifecycle tracking for merging branch changes.
+- `file_snapshots`: Raw encrypted Yjs state managed by Node.js, keyed by `(file_id, branch_id)`.
+- `audit_logs`: Detailed activity tracking across the system.

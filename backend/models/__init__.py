@@ -4,5 +4,10 @@ from .project import Project
 from .membership import Membership
 from .directory import Directory
 from .audit_log import AuditLog
+from .branch import Branch, BranchMember
+from .merge_request import MergeRequest
 
-__all__ = ["User", "Project", "Membership", "Directory", "AuditLog"]
+__all__ = [
+    "User", "Project", "Membership", "Directory", "AuditLog",
+    "Branch", "BranchMember", "MergeRequest",
+]

@@ -18,7 +18,7 @@ from core.database import engine, AsyncSessionLocal, Base
 from core.security import get_password_hash
 
 # ── Import all models so Base.metadata knows about every table ────────────────
-from models import User, Project, Membership, Directory, AuditLog  # noqa: F401
+from models import User, Project, Membership, Directory, AuditLog, Branch, BranchMember, MergeRequest  # noqa: F401
 from models.user import UserRole
 from models.audit_log import AuditAction, ResourceType
 
@@ -30,6 +30,8 @@ from routers import (
     directories_router,
     memberships_router,
     logs_router,
+    branches_router,
+    merges_router,
 )
 from services.audit_service import log_action
 
@@ -142,6 +144,8 @@ app.include_router(users_router,       prefix="/api/users",                  tag
 app.include_router(projects_router,    prefix="/api/projects",               tags=["Projects"])
 app.include_router(directories_router, prefix="/api/projects",               tags=["Directories"])
 app.include_router(memberships_router, prefix="/api/projects",               tags=["Members"])
+app.include_router(branches_router,    prefix="/api/projects",               tags=["Branches"])
+app.include_router(merges_router,      prefix="/api/projects",               tags=["Merges"])
 app.include_router(logs_router,        prefix="/api/logs",                   tags=["Audit Logs"])
 
 

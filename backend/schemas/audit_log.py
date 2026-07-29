@@ -20,6 +20,10 @@ class AuditAction(str, enum.Enum):
     load_snapshot = "load_snapshot"
     deactivate_user = "deactivate_user"
     reactivate_user = "reactivate_user"
+    # Branch lifecycle
+    branch_created = "branch_created"
+    merged = "merged"
+    merge_reviewed = "merge_reviewed"
 
 
 class ResourceType(str, enum.Enum):
@@ -31,12 +35,15 @@ class ResourceType(str, enum.Enum):
     room = "room"
     session = "session"
     snapshot = "snapshot"
+    branch = "branch"
+    merge_request = "merge_request"
 
 
 class AuditLogRead(BaseModel):
     id: uuid.UUID
     actor_id: Optional[uuid.UUID]
     project_id: Optional[uuid.UUID]
+    branch_id: Optional[uuid.UUID]
     resource_type: ResourceType
     resource_id: Optional[uuid.UUID]
     action: AuditAction

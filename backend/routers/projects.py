@@ -9,6 +9,7 @@ from core.deps import get_current_user, require_superadmin, get_client_ip
 from models.user import User, UserRole
 from models.project import Project
 from models.membership import Membership
+from models.branch import Branch, BranchType
 from models.audit_log import AuditAction, ResourceType
 from schemas.project import ProjectCreate, ProjectRead, ProjectUpdate, ProjectList
 from services.audit_service import log_action
@@ -95,6 +96,16 @@ async def create_project(
     )
     db.add(membership)
 
+    # Auto-create the 'main' branch for this project
+    main_branch = Branch(
+        project_id=project.id,
+        name="main",
+        type=BranchType.main,
+        created_by=user.id,
+    )
+    db.add(main_branch)
+    await db.flush()  # flush to get main_branch.id
+
     await log_action(
         db,
         actor_id=user.id,
@@ -103,6 +114,18 @@ async def create_project(
         resource_id=project.id,
         project_id=project.id,
         detail={"name": project.name, "description": project.description},
+        ip_address=get_client_ip(request),
+    )
+
+    await log_action(
+        db,
+        actor_id=user.id,
+        action=AuditAction.branch_created,
+        resource_type=ResourceType.branch,
+        resource_id=main_branch.id,
+        project_id=project.id,
+        branch_id=main_branch.id,
+        detail={"name": "main", "type": "main", "auto_created": True},
         ip_address=get_client_ip(request),
     )
 
@@ -166,17 +189,17 @@ async def update_project(
     return ProjectRead.model_validate(project)
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete project (superadmin only)")
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete project (owner/superadmin)")
 async def delete_project(
     project_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(require_superadmin),
+    actor: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _assert_project_access(db, project_id, actor)
+
+    if actor.role != UserRole.superadmin and project.owner_id != actor.id:
+        raise HTTPException(status_code=403, detail="Only the project owner or a superadmin can delete this project")
 
     project.is_active = False  # Soft delete — preserves audit log FK references
 

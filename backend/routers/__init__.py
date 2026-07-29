@@ -4,6 +4,8 @@ from .projects import router as projects_router
 from .directories import router as directories_router
 from .memberships import router as memberships_router
 from .logs import router as logs_router
+from .branches import router as branches_router
+from .merges import router as merges_router
 
 __all__ = [
     "auth_router",
@@ -12,4 +14,6 @@ __all__ = [
     "directories_router",
     "memberships_router",
     "logs_router",
+    "branches_router",
+    "merges_router",
 ]

@@ -20,7 +20,7 @@ def utcnow():
 class Directory(Base):
     __tablename__ = "directories"
     __table_args__ = (
-        UniqueConstraint("project_id", "parent_id", "name", name="uq_dir_name_in_parent"),
+        UniqueConstraint("project_id", "parent_id", "branch_id", "name", name="uq_dir_name_in_branch"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -47,6 +47,13 @@ class Directory(Base):
     # Path to encrypted Yjs snapshot on disk (relative to SNAPSHOT_DIR)
     # e.g. "{project_id}/{file_id}.snap"
     snapshot_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Branch this node belongs to (NULL only during migration, backfilled by migration_v2.sql)
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

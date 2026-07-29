@@ -14,6 +14,7 @@ async def log_action(
     resource_type: ResourceType,
     resource_id: Optional[UUID] = None,
     project_id: Optional[UUID] = None,
+    branch_id: Optional[UUID] = None,
     detail: Optional[dict[str, Any]] = None,
     ip_address: Optional[str] = None,
 ) -> AuditLog:
@@ -29,8 +30,10 @@ async def log_action(
         resource_type=resource_type,
         resource_id=resource_id,
         project_id=project_id,
+        branch_id=branch_id,
         detail=detail or {},
         ip_address=ip_address,
     )
     db.add(entry)
     return entry
+

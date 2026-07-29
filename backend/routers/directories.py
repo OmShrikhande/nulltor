@@ -1,6 +1,6 @@
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -57,14 +57,16 @@ def _build_tree(nodes: list[Directory], parent_id: Optional[UUID] = None) -> lis
 @router.get("/{project_id}/tree", response_model=list[DirectoryTreeNode], summary="Get full directory tree")
 async def get_tree(
     project_id: UUID,
+    branch_id: Optional[UUID] = Query(None, description="Filter tree by branch; defaults to project main branch"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     await _get_project_and_access(db, project_id, user)
 
-    result = await db.execute(
-        select(Directory).where(Directory.project_id == project_id).order_by(Directory.name)
-    )
+    q = select(Directory).where(Directory.project_id == project_id)
+    if branch_id:
+        q = q.where(Directory.branch_id == branch_id)
+    result = await db.execute(q.order_by(Directory.name))
     nodes = result.scalars().all()
     return _build_tree(nodes)
 
@@ -74,6 +76,7 @@ async def create_node(
     project_id: UUID,
     payload: DirectoryCreate,
     request: Request,
+    branch_id: Optional[UUID] = Query(None, description="Branch to create the node in; defaults to project main branch"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -103,6 +106,7 @@ async def create_node(
         parent_id=payload.parent_id,
         name=payload.name,
         type=payload.type,
+        branch_id=branch_id,
         created_by=user.id,
         updated_by=user.id,
     )

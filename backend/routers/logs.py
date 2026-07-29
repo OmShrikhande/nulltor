@@ -19,6 +19,7 @@ async def list_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     project_id: Optional[UUID] = None,
+    branch_id: Optional[UUID] = None,
     actor_id: Optional[UUID] = None,
     action: Optional[AuditAction] = None,
     resource_type: Optional[ResourceType] = None,
@@ -36,6 +37,8 @@ async def list_logs(
 
     if project_id:
         q = q.where(AuditLog.project_id == project_id)
+    if branch_id:
+        q = q.where(AuditLog.branch_id == branch_id)
     if actor_id:
         q = q.where(AuditLog.actor_id == actor_id)
     if action:

@@ -23,6 +23,10 @@ class AuditAction(str, enum.Enum):
     load_snapshot = "load_snapshot"
     deactivate_user = "deactivate_user"
     reactivate_user = "reactivate_user"
+    # Branch lifecycle
+    branch_created = "branch_created"
+    merged = "merged"
+    merge_reviewed = "merge_reviewed"
 
 
 class ResourceType(str, enum.Enum):
@@ -34,6 +38,8 @@ class ResourceType(str, enum.Enum):
     room = "room"
     session = "session"
     snapshot = "snapshot"
+    branch = "branch"
+    merge_request = "merge_request"
 
 
 def utcnow():
@@ -70,6 +76,12 @@ class AuditLog(Base):
     )
     detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, index=True
     )

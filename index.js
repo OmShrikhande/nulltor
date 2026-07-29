@@ -8,23 +8,26 @@ const { Pool } = require("pg");
 // ── PostgreSQL Pool ───────────────────────────────────────────────────────
 const pgPool = new Pool({ connectionString: process.env.DATABASE_URL_PG });
 
-// Ensure the snapshots table exists on startup
+// Ensure the snapshots table exists on startup (migration_v2.sql handles composite PK upgrade)
 pgPool.query(`
     CREATE TABLE IF NOT EXISTS file_snapshots (
-        file_id     TEXT        PRIMARY KEY,
+        file_id     TEXT        NOT NULL,
+        branch_id   TEXT        NOT NULL DEFAULT 'main',
         data        TEXT        NOT NULL,
-        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (file_id, branch_id)
     );
 `).then(() => console.log("[pg] file_snapshots table ready"))
   .catch(err => console.error("[pg] table init error:", err.message));
 
-async function loadSnapshot(fileId) {
-    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+async function loadSnapshot(fileId, branchId = 'main') {
+    const safeFileId = fileId.replace(/[^a-zA-Z0-9_:-]/g, "");
+    const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "") || 'main';
     if (!safeFileId) return null;
     try {
         const res = await pgPool.query(
-            "SELECT data FROM file_snapshots WHERE file_id = $1",
-            [safeFileId]
+            "SELECT data FROM file_snapshots WHERE file_id = $1 AND branch_id = $2",
+            [safeFileId, safeBranchId]
         );
         return res.rows.length > 0 ? res.rows[0].data : null;
     } catch (err) {
@@ -33,16 +36,17 @@ async function loadSnapshot(fileId) {
     }
 }
 
-async function saveSnapshot(fileId, data) {
-    const safeFileId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+async function saveSnapshot(fileId, branchId = 'main', data) {
+    const safeFileId = fileId.replace(/[^a-zA-Z0-9_:-]/g, "");
+    const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "") || 'main';
     if (!safeFileId) return;
     try {
         await pgPool.query(
-            `INSERT INTO file_snapshots (file_id, data, updated_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT (file_id) DO UPDATE
+            `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (file_id, branch_id) DO UPDATE
              SET data = EXCLUDED.data, updated_at = NOW()`,
-            [safeFileId, data]
+            [safeFileId, safeBranchId, data]
         );
     } catch (err) {
         console.error("[pg] saveSnapshot error:", err.message);
@@ -97,28 +101,34 @@ function broadcastPresence(fileId) {
 io.on("connection", (socket) => {
     console.log("[connect]", socket.id);
 
-    socket.on("join-file", async ({ fileId }) => {
+    socket.on("join-file", async ({ fileId, branchId }) => {
         if (!fileId || typeof fileId !== 'string') return;
         
-        socket.join(fileId);
-        peerInfo.set(socket.id, { fileId, name: "Peer", color: "#6366f1" });
+        // Room key: fileId::branchId — each branch has independent Yjs state
+        const safeBranchId = (branchId && typeof branchId === 'string')
+            ? branchId.replace(/[^a-zA-Z0-9_-]/g, '') || 'main'
+            : 'main';
+        const roomKey = `${fileId}::${safeBranchId}`;
         
-        let members = roomMembers.get(fileId);
+        socket.join(roomKey);
+        peerInfo.set(socket.id, { fileId: roomKey, rawFileId: fileId, branchId: safeBranchId, name: "Peer", color: "#6366f1" });
+        
+        let members = roomMembers.get(roomKey);
         if (!members) {
             members = new Set();
-            roomMembers.set(fileId, members);
+            roomMembers.set(roomKey, members);
         }
         members.add(socket.id);
 
-        console.log(`[join-file] ${socket.id} joined ${fileId}`);
+        console.log(`[join-file] ${socket.id} joined ${roomKey}`);
         
-        const snapshot = await loadSnapshot(fileId);
+        const snapshot = await loadSnapshot(fileId, safeBranchId);
         socket.emit("approved", {
             snapshot,
-            salt: null // Salt will be fetched from API now
+            salt: null // Salt fetched from API by client
         });
         
-        broadcastPresence(fileId);
+        broadcastPresence(roomKey);
     });
 
     socket.on("register-peer", ({ name, color }) => {
@@ -154,7 +164,7 @@ io.on("connection", (socket) => {
         if (!payload || typeof payload !== "string") return;
         if (payload.length > MAX_UPDATE_SIZE) return;
 
-        await saveSnapshot(info.fileId, payload);
+        await saveSnapshot(info.rawFileId || info.fileId, info.branchId || 'main', payload);
     });
 
     socket.on("request-sync", async () => {
