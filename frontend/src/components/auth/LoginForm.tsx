@@ -1,11 +1,34 @@
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { toast } from '../shared/Toast';
 import { ApiError } from '../../api/client';
+import { NulltorLogo } from '../shared/NulltorLogo';
 
 interface LoginFormProps {
   onSuccess: () => void;
 }
+
+const FLOATING_WORDS = [
+  { text: 'Nulltor', left: '4%', delay: '-1s' },
+  { text: 'E2EE Encryption', left: '15%', delay: '-5s' },
+  { text: 'Real-Time Yjs', left: '26%', delay: '-2s' },
+  { text: 'Branch Subrooms', left: '38%', delay: '-7s' },
+  { text: 'Zero-Knowledge', left: '50%', delay: '-3s' },
+  { text: 'FastAPI Backend', left: '62%', delay: '-8s' },
+  { text: 'Socket.IO Sync', left: '74%', delay: '-4s' },
+  { text: 'Monaco Editor', left: '85%', delay: '-6s' },
+  { text: 'Quantum Mesh', left: '93%', delay: '-1.5s' },
+  { text: 'Collaborative IDE', left: '10%', delay: '-3.5s' },
+  { text: 'SQLite / Postgres', left: '22%', delay: '-6.5s' },
+  { text: 'CRDT Deltas', left: '32%', delay: '-0.5s' },
+  { text: 'Audit Telemetry', left: '44%', delay: '-4.5s' },
+  { text: 'Nulltor Engine', left: '55%', delay: '-8.5s' },
+  { text: 'System Governance', left: '68%', delay: '-2.5s' },
+  { text: 'Multi-User Sync', left: '78%', delay: '-7.5s' },
+  { text: 'AES-256 GCM', left: '88%', delay: '-5.2s' },
+  { text: 'Passphrase Vault', left: '6%', delay: '-7.8s' },
+  { text: 'Nulltor IDE', left: '48%', delay: '-1.8s' },
+  { text: 'Code Workspace', left: '82%', delay: '-3.2s' },
+];
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const login = useAuthStore((s) => s.login);
@@ -31,25 +54,38 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <div className="login-screen">
+      {/* High-frequency Animated Floating Background Words */}
+      <div className="floating-words-bg">
+        {FLOATING_WORDS.map((item, idx) => (
+          <div
+            key={idx}
+            className="floating-word"
+            style={{ left: item.left, animationDelay: item.delay }}
+          >
+            {item.text}
+          </div>
+        ))}
+      </div>
+
       <div className="login-glow" />
+
       <div className="login-card">
         <div className="login-logo">
-          <span className="logo-icon">◈</span>
-          <span className="logo-text">nulltor</span>
+          <NulltorLogo size="lg" />
         </div>
-        <h1 className="login-title">Welcome back</h1>
-        <p className="login-sub">Sign in to your workspace</p>
+        <h1 className="login-title">Nulltor Enterprise</h1>
+        <p className="login-sub">Sign in to your Collaborative Nexus Workspace</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-field">
-            <label htmlFor="login-email">Email</label>
+            <label htmlFor="login-email">Email or Username</label>
             <input
               id="login-email"
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="superadmin@nulltor.com"
-              autoComplete="email"
+              placeholder="superadmin@nulltor.com or superadmin"
+              autoComplete="username"
               required
             />
           </div>
@@ -67,7 +103,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </div>
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Signing in…' : 'Sign in to Nulltor'}
           </button>
         </form>
       </div>

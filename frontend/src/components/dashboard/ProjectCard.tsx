@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { projectsApi, type ProjectRead } from '../../api/projects';
-import { branchesApi } from '../../api/branches';
+import { projectsApi, type ProjectRead, type ProjectStatus } from '../../api/projects';
 import { useProjectStore } from '../../store/projectStore';
 import { Modal } from '../shared/Modal';
 import { MembersModal } from './MembersModal';
 import { toast } from '../shared/Toast';
-import { ApiError } from '../../api/client';
 
 interface ProjectCardProps {
   project: ProjectRead;
@@ -14,12 +12,31 @@ interface ProjectCardProps {
   myRole?: string;
   currentUserId?: string;
   onDeleted?: () => void;
+  onUpdated?: () => void;
 }
 
-export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, onDeleted }: ProjectCardProps) {
+export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, onDeleted, onUpdated }: ProjectCardProps) {
   const navigate = useNavigate();
   const [showMembers, setShowMembers] = useState(false);
+  const [status, setStatus] = useState<ProjectStatus>((project.status as ProjectStatus) || 'live');
+  const [loadingStatus, setLoadingStatus] = useState(false);
   const setProject = useProjectStore((s) => s.setProject);
+
+  async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    const newStatus = e.target.value as ProjectStatus;
+    setStatus(newStatus);
+    setLoadingStatus(true);
+    try {
+      await projectsApi.update(project.id, { status: newStatus });
+      toast(`Project status updated to ${newStatus}`, 'success');
+      if (onUpdated) onUpdated();
+    } catch {
+      toast('Failed to update status', 'error');
+    } finally {
+      setLoadingStatus(false);
+    }
+  }
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation();
@@ -38,45 +55,81 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
     navigate(`/ide/${project.id}`);
   }
 
-  const updatedAt = new Date(project.updated_at).toLocaleDateString();
+  const isOwner = project.owner_id === currentUserId || myRole === 'superadmin' || myRole === 'lead';
 
   return (
     <>
-      <div className="project-card" onClick={open} role="button" tabIndex={0}
-        onKeyDown={(e) => e.key === 'Enter' && open()}>
-      <div className="project-icon">📁</div>
-      <div className="project-info">
-        <div className="project-name">
-          {project.name}
-          {myRole && (
-            <span className={`badge badge-role-${myRole}`}>{myRole}</span>
-          )}
+      <div
+        className="project-card-small"
+        onClick={open}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && open()}
+      >
+        <div className="project-card-top">
+          <div className="project-folder-icon">📁</div>
+
+          <div onClick={(e) => e.stopPropagation()}>
+            <span className={`status-pill ${status}`}>
+              ●
+              <select
+                value={status}
+                disabled={loadingStatus}
+                onChange={handleStatusChange}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'inherit',
+                  fontWeight: 600,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  textTransform: 'capitalize',
+                }}
+              >
+                <option value="live" style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>Live</option>
+                <option value="offline" style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>Offline</option>
+                <option value="completed" style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>Completed</option>
+              </select>
+            </span>
+          </div>
         </div>
-        {project.description && (
-          <div className="project-desc">{project.description}</div>
-        )}
-        <div className="project-card-actions" style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setShowMembers(true); }}>
-            👥 Manage Members
-          </button>
-          {(myRole === 'superadmin' || currentUserId === project.owner_id) && (
-            <button className="btn btn-danger btn-sm" onClick={handleDelete}>
-              Delete
+
+        <div>
+          <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>{project.name}</span>
+            {myRole && <span className="branch-pill main" style={{ fontSize: '10px', padding: '1px 6px' }}>{myRole}</span>}
+          </div>
+          <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '36px' }}>
+            {project.description || 'No description provided'}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid var(--border)', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🌿 {branchCount} branch{branchCount !== 1 ? 'es' : ''}</span>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ padding: '2px 6px', fontSize: '11px' }}
+              onClick={(e) => { e.stopPropagation(); setShowMembers(true); }}
+            >
+              👥 Members
+            </button>
+          </div>
+
+          {isOwner && (
+            <button
+              className="btn-icon"
+              style={{ width: '22px', height: '22px', color: 'var(--danger)' }}
+              onClick={handleDelete}
+              title="Delete Project"
+            >
+              🗑
             </button>
           )}
         </div>
-        <div className="project-meta">
-          <span className="project-meta-item">
-            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z"/></svg>
-            {branchCount} branch{branchCount !== 1 ? 'es' : ''}
-          </span>
-          <span className="project-meta-item">
-            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5C0 2.784.784 2 1.75 2ZM1.5 12.251c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25Z"/></svg>
-            Updated {updatedAt}
-          </span>
-        </div>
       </div>
-      </div>
+
       {showMembers && (
         <MembersModal
           projectId={project.id}
@@ -88,25 +141,26 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
   );
 }
 
-export function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: ProjectRead) => void }) {
+export function CreateProjectModal({ onClose, onCreated }: {
+  onClose: () => void;
+  onCreated: (p: ProjectRead) => void;
+}) {
   const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [roomKey, setRoomKey] = useState('');
+  const [description, setDescription] = useState('');
+  const [status, setStatus] = useState<ProjectStatus>('live');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleCreate() {
-    if (!name.trim() || !roomKey.trim()) return;
+    if (!name.trim()) return;
     setLoading(true);
     setError('');
     try {
-      const p = await projectsApi.create(name.trim(), desc.trim() || undefined);
-      sessionStorage.setItem(`roomkey-${p.id}`, roomKey.trim());
+      const p = await projectsApi.create(name.trim(), description.trim() || undefined, status);
       toast(`Project "${p.name}" created`, 'success');
       onCreated(p);
-      onClose();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to create project');
+    } catch (e: any) {
+      setError(e.message || 'Failed to create project');
     } finally {
       setLoading(false);
     }
@@ -114,38 +168,58 @@ export function CreateProjectModal({ onClose, onCreated }: { onClose: () => void
 
   return (
     <Modal
-      title="New Project (Room)"
+      title="Create New Project Workspace"
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleCreate} disabled={loading || !name.trim() || !roomKey.trim()}>
-            {loading ? 'Creating…' : 'Create Project'}
+          <button
+            className="btn"
+            style={{
+              background: 'rgba(13, 148, 136, 0.15)',
+              border: '1px solid #0d9488',
+              color: '#14b8a6',
+              fontWeight: 600,
+            }}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleCreate} disabled={loading || !name.trim()}>
+            {loading ? 'Creating…' : 'Create Workspace'}
           </button>
         </>
       }
     >
       <div className="form-field">
-        <label>Project Name</label>
+        <label style={{ color: '#0d9488', fontWeight: 700 }}>Project Folder Name</label>
         <input
-          type="text" value={name} onChange={(e) => setName(e.target.value)}
-          placeholder="my-awesome-project" autoFocus
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="my-awesome-app"
+          autoFocus
           onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
         />
       </div>
+
       <div className="form-field">
-        <label>Room Key (End-to-End Encryption)</label>
-        <input
-          type="password" value={roomKey} onChange={(e) => setRoomKey(e.target.value)}
-          placeholder="Secret Passphrase"
-          onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+        <label style={{ color: '#0d9488', fontWeight: 700 }}>Description (Optional)</label>
+        <textarea
+          rows={3}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Brief summary of the codebase…"
         />
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>This key is never sent to the server. You must share it with your team.</span>
       </div>
+
       <div className="form-field">
-        <label>Description (optional)</label>
-        <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="What is this project about?" />
+        <label style={{ color: '#0d9488', fontWeight: 700 }}>Initial Status Option</label>
+        <select value={status} onChange={(e) => setStatus(e.target.value as ProjectStatus)}>
+          <option value="live">🟢 Live — active development & real-time collaboration</option>
+          <option value="offline">⚪ Offline — local storage only</option>
+        </select>
       </div>
+
       {error && <p className="form-error">{error}</p>}
     </Modal>
   );

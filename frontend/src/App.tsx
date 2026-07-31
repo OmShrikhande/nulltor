@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { ThemeProvider } from './context/ThemeContext';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { IDEPage } from './pages/IDEPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { SystemUsersPage } from './pages/SystemUsersPage';
@@ -22,16 +24,19 @@ export function App() {
   }, [hydrate]);
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/logs" element={<ProtectedRoute><AuditLogsPage /></ProtectedRoute>} />
-        <Route path="/users" element={<ProtectedRoute><SystemUsersPage /></ProtectedRoute>} />
-        <Route path="/ide/:projectId" element={<ProtectedRoute><IDEPage /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-      <ToastContainer />
-    </HashRouter>
+    <ThemeProvider>
+      <HashRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/logs" element={<ProtectedRoute><AuditLogsPage /></ProtectedRoute>} />
+          <Route path="/users" element={<ProtectedRoute><SystemUsersPage /></ProtectedRoute>} />
+          <Route path="/ide/:projectId" element={<ProtectedRoute><IDEPage /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+        <ToastContainer />
+      </HashRouter>
+    </ThemeProvider>
   );
 }

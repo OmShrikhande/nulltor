@@ -1,9 +1,12 @@
 import { get, post, patch, del } from './client';
 
+export type ProjectStatus = 'live' | 'offline' | 'completed';
+
 export interface ProjectRead {
   id: string;
   name: string;
   description: string | null;
+  status?: ProjectStatus | string;
   owner_id: string;
   room_salt: string | null;
   is_active: boolean;
@@ -22,10 +25,10 @@ export const projectsApi = {
 
   get: (id: string) => get<ProjectRead>(`/projects/${id}`),
 
-  create: (name: string, description?: string) =>
-    post<ProjectRead>('/projects', { name, description }),
+  create: (name: string, description?: string, status?: string) =>
+    post<ProjectRead>('/projects', { name, description, status }),
 
-  update: (id: string, data: Partial<{ name: string; description: string; room_salt: string }>) =>
+  update: (id: string, data: Partial<{ name: string; description: string; status: string; room_salt: string }>) =>
     patch<ProjectRead>(`/projects/${id}`, data),
 
   delete: (id: string) => del(`/projects/${id}`),

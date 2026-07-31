@@ -4,7 +4,7 @@ from typing import List
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/nulltor"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./nulltor.db"
 
     # JWT
     JWT_SECRET_KEY: str = "change-me-to-a-random-64-char-secret"

@@ -1,9 +1,8 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
 
 from core.database import Base
 
@@ -24,16 +23,16 @@ class Membership(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -44,7 +43,7 @@ class Membership(Base):
         default=MembershipRole.member,
     )
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )

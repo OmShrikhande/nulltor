@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { type DirectoryNode, directoriesApi } from '../../api/directories';
 import { useEditorStore } from '../../store/editorStore';
 import { toast } from '../shared/Toast';

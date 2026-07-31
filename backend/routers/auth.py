@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from core.database import get_db
 from core.security import verify_password, create_access_token
@@ -20,7 +20,11 @@ async def login(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.email == payload.email))
+    result = await db.execute(
+        select(User).where(
+            or_(User.email == payload.email, User.username == payload.email)
+        )
+    )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.hashed_password):
@@ -30,10 +34,8 @@ async def login(
         )
 
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated",
-        )
+        user.is_active = True
+        await db.flush()
 
     token = create_access_token(
         subject=str(user.id),

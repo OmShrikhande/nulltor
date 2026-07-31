@@ -1,9 +1,8 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
 
 from core.database import Base
 
@@ -24,16 +23,16 @@ class Directory(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("directories.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
@@ -49,18 +48,18 @@ class Directory(Base):
     snapshot_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Branch this node belongs to (NULL only during migration, backfilled by migration_v2.sql)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("branches.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )

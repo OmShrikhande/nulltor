@@ -5,52 +5,115 @@ const path = require("path");
 const { Server } = require("socket.io");
 const { Pool } = require("pg");
 
-// ── PostgreSQL Pool ───────────────────────────────────────────────────────
-const pgPool = new Pool({ connectionString: process.env.DATABASE_URL_PG });
+const sqlite3 = require("sqlite3").verbose();
+const dbPath = path.join(__dirname, "backend", "nulltor.db");
+const sqliteDb = new sqlite3.Database(dbPath);
 
-// Ensure the snapshots table exists on startup (migration_v2.sql handles composite PK upgrade)
-pgPool.query(`
-    CREATE TABLE IF NOT EXISTS file_snapshots (
-        file_id     TEXT        NOT NULL,
-        branch_id   TEXT        NOT NULL DEFAULT 'main',
-        data        TEXT        NOT NULL,
-        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (file_id, branch_id)
-    );
-`).then(() => console.log("[pg] file_snapshots table ready"))
-  .catch(err => console.error("[pg] table init error:", err.message));
+sqliteDb.serialize(() => {
+    sqliteDb.run(`
+        CREATE TABLE IF NOT EXISTS file_snapshots (
+            file_id     TEXT        NOT NULL,
+            branch_id   TEXT        NOT NULL DEFAULT 'main',
+            data        TEXT        NOT NULL,
+            updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (file_id, branch_id)
+        );
+    `, (err) => {
+        if (err) console.error("[sqlite] file_snapshots init error:", err.message);
+        else console.log("[sqlite] file_snapshots table ready");
+    });
+});
+
+let usePg = false;
+let pgPool = null;
+
+if (process.env.DATABASE_URL_PG) {
+    try {
+        const { Pool } = require("pg");
+        pgPool = new Pool({ connectionString: process.env.DATABASE_URL_PG, connectionTimeoutMillis: 2000 });
+        pgPool.query(`
+            CREATE TABLE IF NOT EXISTS file_snapshots (
+                file_id     TEXT        NOT NULL,
+                branch_id   TEXT        NOT NULL DEFAULT 'main',
+                data        TEXT        NOT NULL,
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (file_id, branch_id)
+            );
+        `).then(() => {
+            usePg = true;
+            console.log("[pg] file_snapshots table ready");
+        }).catch(err => {
+            console.log("[pg] PostgreSQL connection unavailable, using SQLite fallback");
+            usePg = false;
+        });
+    } catch (err) {
+        usePg = false;
+    }
+}
 
 async function loadSnapshot(fileId, branchId = 'main') {
     const safeFileId = fileId.replace(/[^a-zA-Z0-9_:-]/g, "");
     const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "") || 'main';
     if (!safeFileId) return null;
-    try {
-        const res = await pgPool.query(
-            "SELECT data FROM file_snapshots WHERE file_id = $1 AND branch_id = $2",
-            [safeFileId, safeBranchId]
-        );
-        return res.rows.length > 0 ? res.rows[0].data : null;
-    } catch (err) {
-        console.error("[pg] loadSnapshot error:", err.message);
-        return null;
+
+    if (usePg && pgPool) {
+        try {
+            const res = await pgPool.query(
+                "SELECT data FROM file_snapshots WHERE file_id = $1 AND branch_id = $2",
+                [safeFileId, safeBranchId]
+            );
+            return res.rows.length > 0 ? res.rows[0].data : null;
+        } catch (err) {
+            console.error("[pg] loadSnapshot error:", err.message);
+        }
     }
+
+    return new Promise((resolve) => {
+        sqliteDb.get(
+            "SELECT data FROM file_snapshots WHERE file_id = ? AND branch_id = ?",
+            [safeFileId, safeBranchId],
+            (err, row) => {
+                if (err) {
+                    console.error("[sqlite] loadSnapshot error:", err.message);
+                    resolve(null);
+                } else {
+                    resolve(row ? row.data : null);
+                }
+            }
+        );
+    });
 }
 
 async function saveSnapshot(fileId, branchId = 'main', data) {
     const safeFileId = fileId.replace(/[^a-zA-Z0-9_:-]/g, "");
     const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "") || 'main';
     if (!safeFileId) return;
-    try {
-        await pgPool.query(
-            `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
-             VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (file_id, branch_id) DO UPDATE
-             SET data = EXCLUDED.data, updated_at = NOW()`,
-            [safeFileId, safeBranchId, data]
-        );
-    } catch (err) {
-        console.error("[pg] saveSnapshot error:", err.message);
+
+    if (usePg && pgPool) {
+        try {
+            await pgPool.query(
+                `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                 VALUES ($1, $2, $3, NOW())
+                 ON CONFLICT (file_id, branch_id) DO UPDATE
+                 SET data = EXCLUDED.data, updated_at = NOW()`,
+                [safeFileId, safeBranchId, data]
+            );
+            return;
+        } catch (err) {
+            console.error("[pg] saveSnapshot error:", err.message);
+        }
     }
+
+    sqliteDb.run(
+        `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(file_id, branch_id) DO UPDATE
+         SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`,
+        [safeFileId, safeBranchId, data],
+        (err) => {
+            if (err) console.error("[sqlite] saveSnapshot error:", err.message);
+        }
+    );
 }
 
 const app = express();

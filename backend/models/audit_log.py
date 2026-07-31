@@ -1,9 +1,8 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum, Uuid, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 
 from core.database import Base
 
@@ -50,16 +49,16 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     actor_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -68,16 +67,16 @@ class AuditLog(Base):
         SAEnum(ResourceType, name="resource_type", create_type=False),
         nullable=False,
     )
-    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     action: Mapped[AuditAction] = mapped_column(
         SAEnum(AuditAction, name="audit_action", create_type=False),
         nullable=False,
         index=True,
     )
-    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
+    detail: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("branches.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

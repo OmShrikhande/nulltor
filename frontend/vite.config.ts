@@ -9,7 +9,7 @@ export default defineConfig({
     proxy: {
       // FastAPI backend (auth, projects, branches, merges, etc.)
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8001',
         changeOrigin: true,
       },
       // Socket.IO server (Yjs real-time collaborative editing)

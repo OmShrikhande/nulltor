@@ -1,9 +1,8 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum, Uuid, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from core.database import Base
 
@@ -34,22 +33,22 @@ class MergeRequest(Base):
     __tablename__ = "merge_requests"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     source_branch_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     target_branch_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -58,12 +57,12 @@ class MergeRequest(Base):
     file_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
     requested_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -78,7 +77,7 @@ class MergeRequest(Base):
     # Encrypted Yjs snapshot of the confirmed merged result
     merged_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    detail: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

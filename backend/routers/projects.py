@@ -82,6 +82,7 @@ async def create_project(
     project = Project(
         name=payload.name,
         description=payload.description,
+        status=payload.status or "live",
         owner_id=user.id,
     )
     db.add(project)
@@ -113,7 +114,7 @@ async def create_project(
         resource_type=ResourceType.project,
         resource_id=project.id,
         project_id=project.id,
-        detail={"name": project.name, "description": project.description},
+        detail={"name": project.name, "description": project.description, "status": project.status},
         ip_address=get_client_ip(request),
     )
 
@@ -171,6 +172,9 @@ async def update_project(
     if payload.description is not None:
         changes["description"] = {"from": project.description, "to": payload.description}
         project.description = payload.description
+    if payload.status is not None:
+        changes["status"] = {"from": getattr(project, "status", "live"), "to": payload.status}
+        project.status = payload.status
     if payload.room_salt is not None:
         project.room_salt = payload.room_salt
         changes["room_salt"] = "updated"

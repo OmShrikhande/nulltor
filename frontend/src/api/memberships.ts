@@ -1,5 +1,4 @@
 import { get, post, del } from './client';
-import { type UserRead } from './auth';
 
 export interface MembershipRead {
   id: string;

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { type BranchRead, type BranchType, branchesApi } from '../../api/branches';
-import { useProjectStore } from '../../store/projectStore';
 import { Modal } from '../shared/Modal';
 import { toast } from '../shared/Toast';
 
@@ -20,31 +19,36 @@ const BRANCH_ICONS: Record<BranchType, string> = {
 
 export function BranchSelector({ branches, currentBranch, projectId, onBranchChange, onRefresh }: BranchSelectorProps) {
   const [showCreate, setShowCreate] = useState(false);
+  const branchType = currentBranch?.type ?? 'main';
 
   return (
-    <div className="branch-selector">
-      <span style={{ color: 'var(--text-muted)' }}>
-        {BRANCH_ICONS[currentBranch?.type ?? 'main']}
-      </span>
-      <select
-        className="branch-select"
-        value={currentBranch?.id ?? ''}
-        onChange={(e) => {
-          const b = branches.find((br) => br.id === e.target.value);
-          if (b) onBranchChange(b);
-        }}
-      >
-        {branches.map((b) => (
-          <option key={b.id} value={b.id}>
-            {BRANCH_ICONS[b.type]} {b.name} ({b.type})
-          </option>
-        ))}
-      </select>
+    <div className="branch-selector" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+      <div className={`branch-pill ${branchType}`}>
+        <span>{BRANCH_ICONS[branchType]}</span>
+        <select
+          value={currentBranch?.id ?? ''}
+          onChange={(e) => {
+            const b = branches.find((br) => br.id === e.target.value);
+            if (b) onBranchChange(b);
+          }}
+          style={{ background: 'transparent', border: 'none', color: 'inherit', fontWeight: 600, fontSize: '12px', cursor: 'pointer', outline: 'none' }}
+        >
+          {branches.map((b) => (
+            <option key={b.id} value={b.id} style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>
+              {BRANCH_ICONS[b.type]} {b.name} ({b.type})
+            </option>
+          ))}
+        </select>
+      </div>
+
       <button
         className="btn btn-ghost btn-sm"
-        title="Create new branch"
+        title="Create new branch or subroom"
         onClick={() => setShowCreate(true)}
-      >+ Branch</button>
+        style={{ padding: '4px 8px', fontSize: '11.5px', borderRadius: 'var(--radius-full)' }}
+      >
+        + Branch
+      </button>
 
       {showCreate && (
         <CreateBranchModal
@@ -93,7 +97,7 @@ export function CreateBranchModal({ projectId, branches, onClose, onCreated }: {
 
   return (
     <Modal
-      title="New Branch"
+      title="Create New Branch"
       onClose={onClose}
       footer={
         <>
@@ -114,10 +118,10 @@ export function CreateBranchModal({ projectId, branches, onClose, onCreated }: {
         />
       </div>
       <div className="form-field">
-        <label>Type</label>
+        <label>Branch Type</label>
         <select value={type} onChange={(e) => setType(e.target.value as BranchType)}>
-          <option value="subroom">🔀 Subroom — collaborative feature branch</option>
-          <option value="private">🔒 Private — personal fork (only you)</option>
+          <option value="subroom">🔀 Subroom — collaborative feature branch (#FCE6D3)</option>
+          <option value="private">🔒 Private — personal fork (#FBB7C7)</option>
         </select>
       </div>
       <div className="form-field">

@@ -9,7 +9,7 @@
  *   const { text, content, isConnected } = useYjsDoc({ fileId, branchId, encrypt, decrypt });
  *   // bind `text` (Y.Text) to Monaco Editor via y-monaco or MonacoBinding
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { io, Socket } from 'socket.io-client';
 
