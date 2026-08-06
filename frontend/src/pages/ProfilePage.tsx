@@ -46,7 +46,7 @@ export function ProfilePage() {
             {/* Header Title Bar with Nulltor Logo */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {/* <NulltorLogo size="lg" /> */}
+                <NulltorLogo size="lg" />
                 <div>
                   <h1 style={{ fontSize: '26px', fontWeight: 800 }}>
                     User <span className="text-gradient">Profile</span> & Identity

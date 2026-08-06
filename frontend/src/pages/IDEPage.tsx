@@ -67,7 +67,6 @@ const FLOATING_WORDS = [
   { text: 'Monaco Editor', left: '85%', delay: '-6s' },
   { text: 'Quantum Mesh', left: '93%', delay: '-1.5s' },
   { text: 'Collaborative IDE', left: '10%', delay: '-3.5s' },
-  { text: 'SQLite / Postgres', left: '22%', delay: '-6.5s' },
   { text: 'CRDT Deltas', left: '32%', delay: '-0.5s' },
   { text: 'Audit Telemetry', left: '44%', delay: '-4.5s' },
   { text: 'Nulltor Engine', left: '55%', delay: '-8.5s' },
@@ -76,7 +75,6 @@ const FLOATING_WORDS = [
   { text: 'AES-256 GCM', left: '88%', delay: '-5.2s' },
   { text: 'Passphrase Vault', left: '6%', delay: '-7.8s' },
   { text: 'Nulltor IDE', left: '48%', delay: '-1.8s' },
-  { text: 'Code Workspace', left: '82%', delay: '-3.2s' },
 ];
 
 function PassphraseModal({
@@ -105,9 +103,9 @@ function PassphraseModal({
         <div className="login-logo">
           <NulltorLogo size="lg" />
         </div>
-        <h1 className="login-title">Secure Session Key</h1>
+        <h1 className="login-title">Start Room & IDE Session</h1>
         <p className="login-sub">
-          Enter the room key to initialize zero-knowledge E2EE decryption for this workspace.
+          Enter the project room passphrase to initialize real-time zero-knowledge E2EE collaboration.
         </p>
 
         <form
@@ -118,28 +116,30 @@ function PassphraseModal({
           }}
         >
           <div className="form-field">
-            <label htmlFor="passphrase-input">Room Encryption Key</label>
+            <label htmlFor="passphrase-input" style={{ color: '#0d9488', fontWeight: 700 }}>
+              Project Room Key
+            </label>
             <input
               id="passphrase-input"
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder="e.g. secret-room-key-123"
+              placeholder="e.g. room-passphrase-123"
               autoFocus
               required
             />
           </div>
           <button type="submit" className="btn btn-primary btn-full">
-            Unlock Real-Time Room
+            🚀 Launch Project Session & IDE
           </button>
         </form>
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', textAlign: 'center' }}>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-            Or work in your isolated local branch without entering room key:
+            Or launch an isolated private subroom session:
           </p>
           <button className="btn btn-ghost btn-sm btn-full" onClick={onPrivateCopy}>
-            🔒 Create Private Local Fork
+            🔒 Launch Private Subroom Session
           </button>
         </div>
       </div>
@@ -172,7 +172,7 @@ export function IDEPage() {
       sessionStorage.setItem(`roomkey-${projectId}`, mainPass);
 
       const bl = await branchesApi.list(projectId!);
-      const myPrivateName = `private-${user?.username || 'user'}`;
+      const myPrivateName = `subroom-priv-${user?.username || 'user'}`;
       let pb = bl.items.find((b) => b.name === myPrivateName);
 
       if (!pb) {
@@ -187,7 +187,7 @@ export function IDEPage() {
       sessionStorage.setItem(`privatebranch-${projectId}`, pb.id);
       setPassphrase(mainPass);
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Failed to setup private branch', 'error');
+      toast(e instanceof Error ? e.message : 'Failed to setup private subroom', 'error');
     } finally {
       setCreatingPrivate(false);
     }
@@ -206,7 +206,7 @@ export function IDEPage() {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-0)' }}>
         <NulltorLogo size="lg" />
-        <p style={{ color: 'var(--text-secondary)', marginTop: '16px' }}>Initializing isolated private branch…</p>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '16px' }}>Launching isolated private subroom IDE session…</p>
       </div>
     );
   }
@@ -238,7 +238,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     encrypt,
     decrypt,
     username: user?.username ?? 'Anonymous',
-    color: '#0284c7',
+    color: '#01EFAC',
   });
 
   const { tree, loading: treeLoading, refresh: refreshTree } = useDirectoryTree(
@@ -267,7 +267,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
         if (defaultBranch && !currentBranch) setBranch(defaultBranch);
       } catch {
-        toast('Failed to load project', 'error');
+        toast('Failed to load project room', 'error');
         navigate('/dashboard');
       } finally {
         setLoading(false);
@@ -294,6 +294,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
   async function handleBranchChange(branch: BranchRead) {
     setBranch(branch);
+    toast(`Switched to ${branch.type.toUpperCase()} room: ${branch.name}`, 'info');
     refreshTree();
   }
 
@@ -307,20 +308,20 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-0)' }}>
         <NulltorLogo size="lg" />
-        <p style={{ color: 'var(--text-secondary)', marginTop: '16px' }}>Loading Stitch Nexus IDE environment…</p>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '16px' }}>Initializing Nulltor Room Session & IDE…</p>
       </div>
     );
   }
 
   return (
     <div className="ide-container">
-      {/* Top Global Navigation Bar (Stitch Nexus) */}
+      {/* Top Global Project Session & Room Header */}
       <header className="nexus-topbar">
         <div className="nexus-topbar-left">
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => navigate('/dashboard')}
-            title="Return to Projects Workspace"
+            title="Return to Projects Dashboard"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
               <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z"/>
@@ -330,11 +331,12 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           <NulltorLogo size="sm" showText={false} />
 
           <div className="project-breadcrumbs">
-            <span>Workspace</span>
+            <span style={{ color: 'var(--aurora-mint)', fontWeight: 700 }}>Project Session</span>
             <span className="divider">/</span>
-            <span className="current-project">{currentProject?.name ?? 'IDE'}</span>
+            <span className="current-project" style={{ fontWeight: 800 }}>{currentProject?.name ?? 'Workspace'}</span>
           </div>
 
+          {/* Integrated Subroom Selector & Creator */}
           <BranchSelector
             branches={branches}
             currentBranch={currentBranch}
@@ -345,10 +347,15 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         </div>
 
         <div className="nexus-topbar-right">
+          {/* Room Live Telemetry Badge */}
+          <span className="status-pill live" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            ● ROOM LIVE ({peers.length + 1} ACTIVE)
+          </span>
+
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => toast('Changes saved to Yjs CRDT room', 'success')}
-            title="Save file"
+            onClick={() => toast('Room CRDT delta synced', 'success')}
+            title="Save file state"
           >
             💾 Save
           </button>
@@ -365,9 +372,9 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           <button
             className={`btn btn-sm ${showTeamDrawer ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setShowTeamDrawer(!showTeamDrawer)}
-            title="Toggle Team Session Drawer"
+            title="Toggle Team Session & Subroom Drawer"
           >
-            👥 Team Session {peers.length > 0 && `(${peers.length})`}
+            👥 Team & Subrooms {peers.length > 0 && `(${peers.length})`}
           </button>
 
           <button className="theme-toggle-btn" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>
@@ -406,42 +413,99 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           <div className="ide-side-drawer" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
               <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Team Session
+                Room & Subrooms Overview
               </span>
               <button className="btn-icon" style={{ width: '22px', height: '22px' }} onClick={() => setShowTeamDrawer(false)}>
                 ×
               </button>
             </div>
 
+            {/* Subrooms List in Room Drawer */}
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#0d9488', textTransform: 'uppercase', marginBottom: '8px' }}>
+                🔀 Active Subroom Workspaces ({branches.length})
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {branches.map((b) => {
+                  const isCurrent = b.id === currentBranch?.id;
+                  return (
+                    <div
+                      key={b.id}
+                      onClick={() => handleBranchChange(b)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-xs)',
+                        background: isCurrent ? 'rgba(1, 239, 172, 0.12)' : 'var(--bg-2)',
+                        border: isCurrent ? '1px solid var(--aurora-mint)' : '1px solid var(--border)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{b.type === 'main' ? '🌿' : b.type === 'subroom' ? '🔀' : '🔒'}</span>
+                        <span style={{ fontSize: '12.5px', fontWeight: isCurrent ? 700 : 500, color: isCurrent ? 'var(--aurora-mint)' : 'var(--text-primary)' }}>
+                          {b.name}
+                        </span>
+                      </div>
+                      {isCurrent && <span style={{ fontSize: '10px', color: 'var(--aurora-mint)', fontWeight: 700 }}>ACTIVE</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                className="btn btn-sm"
+                onClick={() => setShowBranchPrompt(true)}
+                style={{
+                  width: '100%',
+                  marginTop: '10px',
+                  background: 'rgba(13, 148, 136, 0.15)',
+                  border: '1px solid #0d9488',
+                  color: '#14b8a6',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                }}
+              >
+                + Create New Subroom
+              </button>
+            </div>
+
             {/* Active Members List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                👥 Active Collaborators ({peers.length + 1})
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div className="user-avatar" style={{ width: 36, height: 36, background: 'linear-gradient(135deg, var(--palette-sky), var(--palette-dark-pink))' }}>
+                <div className="user-avatar" style={{ width: 36, height: 36, background: 'linear-gradient(135deg, var(--aurora-mint), var(--aurora-purple))' }}>
                   {user?.username.slice(0, 2).toUpperCase() || 'ME'}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '13px' }}>{user?.username} (You)</div>
-                  <div style={{ fontSize: '11px', color: '#22c55e' }}>● Editing {openFile?.name || 'file'}</div>
+                  <div style={{ fontWeight: 700, fontSize: '13px' }}>{user?.username} (Room Host)</div>
+                  <div style={{ fontSize: '11px', color: '#22c55e' }}>● Active in {currentBranch?.name || 'main'}</div>
                 </div>
               </div>
 
               {peers.map((peer, i) => (
                 <div key={peer.id || i} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div className="user-avatar" style={{ width: 36, height: 36, background: peer.color || 'var(--palette-sky)' }}>
+                  <div className="user-avatar" style={{ width: 36, height: 36, background: peer.color || 'var(--aurora-teal)' }}>
                     {peer.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '13px' }}>{peer.name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--aurora-mint)' }}>● Collaborative Peer</div>
+                    <div style={{ fontSize: '11px', color: 'var(--aurora-mint)' }}>● Connected Peer</div>
                   </div>
                 </div>
               ))}
 
               {/* Google Meet Style Video Window */}
-              <div style={{ marginTop: '16px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', position: 'relative' }}>
-                <div style={{ height: '120px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+              <div style={{ marginTop: '12px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+                <div style={{ height: '110px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', marginBottom: '4px' }}>📹</div>
+                    <div style={{ fontSize: '22px', marginBottom: '2px' }}>📹</div>
                     <div style={{ fontSize: '11px', fontWeight: 600 }}>Live E2EE Video Call</div>
                   </div>
                 </div>
@@ -455,8 +519,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               </div>
             </div>
 
-            <button className="btn btn-primary btn-full" onClick={() => toast('Room invite link copied to clipboard', 'success')}>
-              + Invite Guest Collaborator
+            <button className="btn btn-primary btn-full" onClick={() => toast('Room session invite link copied', 'success')}>
+              + Invite Peer to Subroom
             </button>
           </div>
         ) : (
