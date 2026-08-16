@@ -8,6 +8,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { IDEPage } from './pages/IDEPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { SystemUsersPage } from './pages/SystemUsersPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { ToastContainer } from './components/shared/Toast';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -33,6 +34,7 @@ export function App() {
           <Route path="/logs" element={<ProtectedRoute><AuditLogsPage /></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute><SystemUsersPage /></ProtectedRoute>} />
           <Route path="/ide/:projectId" element={<ProtectedRoute><IDEPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
         <ToastContainer />

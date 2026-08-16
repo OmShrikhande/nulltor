@@ -6,8 +6,8 @@ from sqlalchemy import select, func
 
 from core.database import get_db
 from core.security import get_password_hash
-from core.deps import get_current_user, require_superadmin, get_client_ip
-from models.user import User
+from core.deps import get_current_user, require_superadmin, require_admin_or_superadmin, get_client_ip
+from models.user import User, UserRole
 from models.audit_log import AuditAction, ResourceType
 from schemas.user import UserCreate, UserRead, UserUpdate, UserList
 from services.audit_service import log_action
@@ -30,14 +30,14 @@ async def search_users(
     return [{"email": u.email, "username": u.username} for u in users]
 
 
-@router.get("", response_model=UserList, summary="List all users (superadmin)")
+@router.get("", response_model=UserList, summary="List all users (admin/superadmin)")
 async def list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
     db: AsyncSession = Depends(get_db),
-    _actor: User = Depends(require_superadmin),
+    _actor: User = Depends(require_admin_or_superadmin),
 ):
     q = select(User)
     if role:
@@ -54,13 +54,16 @@ async def list_users(
     return UserList(total=total, items=[UserRead.model_validate(u) for u in users])
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED, summary="Create user (superadmin)")
+@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED, summary="Create user (admin/superadmin)")
 async def create_user(
     payload: UserCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(require_superadmin),
+    actor: User = Depends(require_admin_or_superadmin),
 ):
+    if payload.role == UserRole.superadmin and actor.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Admins cannot create superadmins")
+
     # Check uniqueness
     dup = await db.execute(
         select(User).where(
@@ -93,11 +96,11 @@ async def create_user(
     return UserRead.model_validate(user)
 
 
-@router.get("/{user_id}", response_model=UserRead, summary="Get a single user (superadmin)")
+@router.get("/{user_id}", response_model=UserRead, summary="Get a single user (admin/superadmin)")
 async def get_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _actor: User = Depends(require_superadmin),
+    _actor: User = Depends(require_admin_or_superadmin),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -106,18 +109,23 @@ async def get_user(
     return UserRead.model_validate(user)
 
 
-@router.patch("/{user_id}", response_model=UserRead, summary="Update user (superadmin)")
+@router.patch("/{user_id}", response_model=UserRead, summary="Update user (admin/superadmin)")
 async def update_user(
     user_id: UUID,
     payload: UserUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(require_superadmin),
+    actor: User = Depends(require_admin_or_superadmin),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role == UserRole.superadmin and actor.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Admins cannot modify superadmins")
+    if payload.role is not None and payload.role == UserRole.superadmin and actor.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Admins cannot promote to superadmin")
 
     changes: dict = {}
     if payload.email is not None and payload.email != user.email:
@@ -154,12 +162,12 @@ async def update_user(
     return UserRead.model_validate(user)
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Deactivate user (superadmin)")
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Deactivate user (admin/superadmin)")
 async def deactivate_user(
     user_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(require_superadmin),
+    actor: User = Depends(require_admin_or_superadmin),
 ):
     if user_id == actor.id:
         raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
@@ -168,6 +176,9 @@ async def deactivate_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role == UserRole.superadmin and actor.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Admins cannot deactivate superadmins")
 
     user.is_active = False
 

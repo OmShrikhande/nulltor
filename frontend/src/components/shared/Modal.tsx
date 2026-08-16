@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 
 interface ModalProps {
   title: string;
@@ -30,7 +31,7 @@ export function Modal({ title, onClose, footer, children, width = 480 }: ModalPr
       <div className="modal-card" style={{ width }}>
         <div className="modal-header">
           <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={14} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}

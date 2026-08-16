@@ -4,6 +4,7 @@ import { type UserRead } from '../api/auth';
 import { Sidebar } from '../components/shared/Sidebar';
 import { toast } from '../components/shared/Toast';
 import { Modal } from '../components/shared/Modal';
+import { Crown, Laptop, Shield } from 'lucide-react';
 
 export function SystemUsersPage() {
   const [users, setUsers] = useState<UserRead[]>([]);
@@ -80,38 +81,38 @@ export function SystemUsersPage() {
 
           {/* User Hierarchy Level Breakdown Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
-            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-violet)' }}>
+            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-purple)', padding: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--aurora-violet)', textTransform: 'uppercase' }}>
-                  👑 Level 1 · Superadmin
+                <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--aurora-purple)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Crown size={15} /> Level 1 · Superadmin
                 </span>
-                <span className="branch-pill private">{superadminCount} Users</span>
+                <span className="branch-pill private" style={{ fontSize: '11px', fontWeight: 700 }}>{superadminCount} Users</span>
               </div>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 Full system control, global audit telemetry, user provisioning & project deletion rights.
               </p>
             </div>
 
-            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-blue)' }}>
+            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-cyan)', padding: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--aurora-blue)', textTransform: 'uppercase' }}>
-                  🛡️ Level 2 · Admin
+                <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--aurora-cyan)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Shield size={15} /> Level 2 · Admin
                 </span>
-                <span className="branch-pill subroom">{adminCount} Users</span>
+                <span className="branch-pill subroom" style={{ fontSize: '11px', fontWeight: 700 }}>{adminCount} Users</span>
               </div>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 Project workspace creation, team invitation, branch management & project settings.
               </p>
             </div>
 
-            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-mint)' }}>
+            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-mint)', padding: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--aurora-mint)', textTransform: 'uppercase' }}>
-                  💻 Level 3 · Member
+                <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--aurora-mint)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Laptop size={15} /> Level 3 · Member
                 </span>
-                <span className="branch-pill main">{memberCount} Users</span>
+                <span className="branch-pill main" style={{ fontSize: '11px', fontWeight: 700 }}>{memberCount} Users</span>
               </div>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 Real-time E2EE collaborative editing, subroom branch creation & code execution.
               </p>
             </div>

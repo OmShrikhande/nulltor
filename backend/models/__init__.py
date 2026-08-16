@@ -6,8 +6,9 @@ from .directory import Directory
 from .audit_log import AuditLog
 from .branch import Branch, BranchMember
 from .merge_request import MergeRequest
+from .commit import Commit
 
 __all__ = [
     "User", "Project", "Membership", "Directory", "AuditLog",
-    "Branch", "BranchMember", "MergeRequest",
+    "Branch", "BranchMember", "MergeRequest", "Commit",
 ]

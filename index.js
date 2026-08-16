@@ -58,11 +58,31 @@ async function loadSnapshot(fileId, branchId = 'main') {
 
     if (usePg && pgPool) {
         try {
-            const res = await pgPool.query(
+            let res = await pgPool.query(
                 "SELECT data FROM file_snapshots WHERE file_id = $1 AND branch_id = $2",
                 [safeFileId, safeBranchId]
             );
-            return res.rows.length > 0 ? res.rows[0].data : null;
+            if (res.rows.length > 0) return res.rows[0].data;
+            
+            // Fallback: lookup corresponding file on main branch by name in directories table
+            if (safeBranchId !== 'main') {
+                const dirRes = await pgPool.query(
+                    `SELECT fs.data 
+                     FROM directories d_sub
+                     JOIN directories d_main ON d_sub.name = d_main.name AND d_sub.project_id = d_main.project_id
+                     JOIN branches b_main ON d_main.branch_id = b_main.id AND b_main.type = 'main'
+                     JOIN file_snapshots fs ON (fs.file_id = d_main.id::text OR fs.file_id = d_main.id) AND (fs.branch_id = b_main.id::text OR fs.branch_id = 'main')
+                     WHERE (d_sub.id = $1::uuid OR d_sub.id::text = $1)
+                     LIMIT 1`,
+                    [safeFileId]
+                ).catch(() => ({ rows: [] }));
+
+                if (dirRes.rows && dirRes.rows.length > 0) {
+                    await saveSnapshot(safeFileId, safeBranchId, dirRes.rows[0].data);
+                    return dirRes.rows[0].data;
+                }
+            }
+            return null;
         } catch (err) {
             console.error("[pg] loadSnapshot error:", err.message);
         }
@@ -76,8 +96,34 @@ async function loadSnapshot(fileId, branchId = 'main') {
                 if (err) {
                     console.error("[sqlite] loadSnapshot error:", err.message);
                     resolve(null);
+                } else if (row && row.data) {
+                    resolve(row.data);
+                } else if (safeBranchId !== 'main') {
+                    // Smart SQLite fallback: lookup corresponding file on main branch by name
+                    sqliteDb.get(
+                        `SELECT fs.data 
+                         FROM directories d_sub
+                         JOIN directories d_main ON d_sub.name = d_main.name AND d_sub.project_id = d_main.project_id
+                         JOIN branches b_main ON d_main.branch_id = b_main.id AND b_main.type = 'main'
+                         JOIN file_snapshots fs ON fs.file_id = d_main.id AND (fs.branch_id = b_main.id OR fs.branch_id = 'main')
+                         WHERE d_sub.id = ?
+                         ORDER BY fs.updated_at DESC LIMIT 1`,
+                        [safeFileId],
+                        (err2, row2) => {
+                            if (row2 && row2.data) {
+                                saveSnapshot(safeFileId, safeBranchId, row2.data);
+                                resolve(row2.data);
+                            } else {
+                                sqliteDb.get(
+                                    "SELECT data FROM file_snapshots WHERE file_id = ? AND branch_id = 'main'",
+                                    [safeFileId],
+                                    (err3, row3) => resolve(row3 ? row3.data : null)
+                                );
+                            }
+                        }
+                    );
                 } else {
-                    resolve(row ? row.data : null);
+                    resolve(null);
                 }
             }
         );
@@ -116,15 +162,64 @@ async function saveSnapshot(fileId, branchId = 'main', data) {
     );
 }
 
+const { createProxyMiddleware } = require("http-proxy-middleware");
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     maxHttpBufferSize: 2e6,
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
+    cors: { origin: "*" }
 });
 
-// ── Static Files ─────────────────────────────────────────────────────────
+// ── Reverse Proxy to FastAPI Backend ──────────────────────────────────────
+const BACKEND_PORT = process.env.BACKEND_PORT || 8001;
+const BACKEND_URL = process.env.BACKEND_URL || `http://127.0.0.1:${BACKEND_PORT}`;
+
+const apiProxy = createProxyMiddleware({
+    target: BACKEND_URL,
+    changeOrigin: true,
+    ws: false,
+    pathRewrite: (pathname) => `/api${pathname}`,
+    logLevel: "warn",
+});
+
+const docsProxy = createProxyMiddleware({
+    target: BACKEND_URL,
+    changeOrigin: true,
+    ws: false,
+    pathRewrite: (pathname) => `/docs${pathname}`,
+    logLevel: "warn",
+});
+
+const wsProxy = createProxyMiddleware({
+    target: BACKEND_URL,
+    changeOrigin: true,
+    ws: true,
+    logLevel: "warn",
+});
+
+// Route API, docs, and terminal WebSockets to FastAPI
+app.use("/api", apiProxy);
+app.use("/docs", docsProxy);
+app.use("/openapi.json", docsProxy);
+app.use("/redoc", docsProxy);
+
+// Handle WebSocket upgrade for terminal xterm execution
+server.on("upgrade", (req, socket, head) => {
+    if (req.url.startsWith("/ws")) {
+        wsProxy.upgrade(req, socket, head);
+    }
+});
+
+// ── Static Files & SPA Fallback ───────────────────────────────────────────
+const reactBuildPath = path.join(__dirname, "public_react");
+app.use(express.static(reactBuildPath, {
+    setHeaders: (res) => {
+        res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    }
+}));
 app.use(express.static("public"));
 app.use("/vendor/crypto-js", express.static(path.join(__dirname, "node_modules/crypto-js")));
 app.use("/vendor/yjs", express.static(path.join(__dirname, "node_modules/yjs/dist")));
@@ -167,7 +262,6 @@ io.on("connection", (socket) => {
     socket.on("join-file", async ({ fileId, branchId }) => {
         if (!fileId || typeof fileId !== 'string') return;
         
-        // Room key: fileId::branchId — each branch has independent Yjs state
         const safeBranchId = (branchId && typeof branchId === 'string')
             ? branchId.replace(/[^a-zA-Z0-9_-]/g, '') || 'main'
             : 'main';
@@ -263,6 +357,21 @@ io.on("connection", (socket) => {
         });
     });
 
+    socket.on("cursor-update", ({ line, column }) => {
+        const info = peerInfo.get(socket.id);
+        if (!info) return;
+        if (typeof line !== "number" || typeof column !== "number") return;
+
+        socket.to(info.fileId).emit("cursor-update", {
+            socketId: socket.id,
+            name: info.name || "Peer",
+            color: info.color || "#6366f1",
+            line: Math.max(1, Math.floor(line)),
+            column: Math.max(1, Math.floor(column)),
+        });
+    });
+
+
     socket.on("disconnect", () => {
         const info = peerInfo.get(socket.id);
         if (info) {
@@ -285,22 +394,39 @@ io.on("connection", (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+// ── SPA Fallback for React UI Routing (Express 5 compatible) ──────────────
+app.use((req, res, next) => {
+    if (req.method !== "GET") return next();
+    if (req.path.startsWith("/api") || req.path.startsWith("/socket.io") || req.path.startsWith("/ws")) {
+        return next();
+    }
+    const indexPath = path.join(reactBuildPath, "index.html");
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.sendFile(indexPath, (err) => {
+        if (err) {
+            res.sendFile(path.join(__dirname, "public", "index.html"), (err2) => {
+                if (err2) next();
+            });
+        }
+    });
+});
+
+const PORT = process.env.PORT || 3330;
 
 server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
         console.error(`\nPort ${PORT} is already in use.`);
-        console.error("Another notepad server is already running — use that one, or stop it first:\n");
-        console.error("  npm run stop");
-        console.error("  npm run dev\n");
-        console.error("Or find the process: netstat -ano | findstr :3000\n");
+        console.error("Another server is already running on this port — stop it first:\n");
+        console.error("  npm run stop\n");
         process.exit(1);
     }
     throw err;
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Secure LAN Notepad → http://0.0.0.0:${PORT}`);
-    console.log(`On this PC: http://127.0.0.1:${PORT}`);
-    console.log(`On LAN:     http://192.168.31.101:${PORT}`);
+    console.log(`\n======================================================`);
+    console.log(`  NULLTOR SECURE COLLABORATIVE PLATFORM READY`);
+    console.log(`  Unified Single-Port Access: http://localhost:${PORT}`);
+    console.log(`  On your Local Network:     http://0.0.0.0:${PORT}`);
+    console.log(`======================================================\n`);
 });

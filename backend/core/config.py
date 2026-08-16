@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+    # AI Agent (Groq)
+    GROQ_API_KEY: str = ""
+    AI_BASE_URL: str = "https://api.groq.com/openai/v1"
+    AI_MODEL: str = "llama-3.3-70b-versatile"
+
     @property
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

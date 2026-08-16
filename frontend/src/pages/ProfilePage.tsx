@@ -6,6 +6,7 @@ import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { ForcePasswordChange } from '../components/auth/ForcePasswordChange';
 import { Modal } from '../components/shared/Modal';
 import { toast } from '../components/shared/Toast';
+import { Folder, Lock } from 'lucide-react';
 
 export function ProfilePage() {
   const { user } = useAuthStore();
@@ -74,7 +75,7 @@ export function ProfilePage() {
                 </div>
 
                 <button className="btn btn-primary btn-sm" onClick={() => setShowPasswordChange(true)}>
-                  🔒 Update Password
+                  <Lock size={14} /> Update Password
                 </button>
               </div>
 
@@ -116,7 +117,7 @@ export function ProfilePage() {
                   return (
                     <div key={p.id} className="project-card-small">
                       <div className="project-card-top">
-                        <div className="project-folder-icon">📁</div>
+                        <div className="project-folder-icon"><Folder size={14} /></div>
                         <span className={`status-pill ${statusStr}`}>
                           ● {statusStr}
                         </span>

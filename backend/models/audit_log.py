@@ -2,6 +2,7 @@ import uuid
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum, Uuid, JSON
+from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -74,7 +75,7 @@ class AuditLog(Base):
         index=True,
     )
     detail: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("branches.id", ondelete="SET NULL"),

@@ -29,6 +29,31 @@ export interface BranchMemberRead {
   email: string | null;
 }
 
+export interface BranchCompareResponse {
+  source_branch_id: string;
+  target_branch_id: string;
+  source_branch_name: string;
+  target_branch_name: string;
+  source_snapshot: string | null;
+  target_snapshot: string | null;
+  source_commits: Array<{ id: string; message: string; created_at: string }>;
+  target_commits: Array<{ id: string; message: string; created_at: string }>;
+}
+
+export interface BranchSyncPayload {
+  source_branch_id: string;
+  file_id?: string;
+  custom_snapshot?: string;
+  sync_message?: string;
+}
+
+export interface BranchSyncResult {
+  status: string;
+  message: string;
+  target_file_id: string | null;
+  snapshot: string | null;
+}
+
 export const branchesApi = {
   list: (projectId: string) =>
     get<BranchList>(`/projects/${projectId}/branches`),
@@ -50,4 +75,12 @@ export const branchesApi = {
 
   removeMember: (projectId: string, branchId: string, userId: string) =>
     del(`/projects/${projectId}/branches/${branchId}/members/${userId}`),
+
+  compare: (projectId: string, branchId: string, sourceBranchId: string, fileId?: string) =>
+    get<BranchCompareResponse>(
+      `/projects/${projectId}/branches/${branchId}/compare?source_branch_id=${encodeURIComponent(sourceBranchId)}${fileId ? `&file_id=${encodeURIComponent(fileId)}` : ''}`
+    ),
+
+  sync: (projectId: string, branchId: string, payload: BranchSyncPayload) =>
+    post<BranchSyncResult>(`/projects/${projectId}/branches/${branchId}/sync`, payload),
 };

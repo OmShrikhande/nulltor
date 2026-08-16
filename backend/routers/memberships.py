@@ -21,7 +21,7 @@ router = APIRouter()
 
 async def _can_manage_members(db: AsyncSession, project_id: UUID, user: User) -> bool:
     """Returns True if user can add/revoke members for this project."""
-    if user.role == UserRole.superadmin:
+    if user.role in (UserRole.superadmin, UserRole.admin):
         return True
     membership = await db.execute(
         select(Membership).where(
@@ -40,7 +40,7 @@ async def list_members(
     user: User = Depends(get_current_user),
 ):
     # Verify access
-    if user.role != UserRole.superadmin:
+    if user.role not in (UserRole.superadmin, UserRole.admin):
         m_check = await db.execute(
             select(Membership).where(
                 Membership.project_id == project_id,

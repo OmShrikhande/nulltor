@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { logsApi, type AuditLogRead } from '../api/logs';
 import { Sidebar } from '../components/shared/Sidebar';
 import { toast } from '../components/shared/Toast';
+import { Trash2, Key, GitBranch, GitMerge, Edit, FileText, PlusCircle } from 'lucide-react';
 
 export function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLogRead[]>([]);
@@ -45,12 +46,12 @@ export function AuditLogsPage() {
   );
 
   const getActionIcon = (action: string) => {
-    if (action.includes('create')) return '✨';
-    if (action.includes('delete')) return '🗑️';
-    if (action.includes('login')) return '🔑';
-    if (action.includes('branch')) return '🌿';
-    if (action.includes('merge')) return '🔀';
-    return '📝';
+    if (action.includes('create')) return <PlusCircle size={16} />;
+    if (action.includes('delete')) return <Trash2 size={16} />;
+    if (action.includes('login')) return <Key size={16} />;
+    if (action.includes('branch')) return <GitBranch size={16} />;
+    if (action.includes('merge')) return <GitMerge size={16} />;
+    return <Edit size={16} />;
   };
 
   const getActionColorClass = (action: string) => {
@@ -129,7 +130,9 @@ export function AuditLogsPage() {
             </div>
           ) : filteredLogs.length === 0 ? (
             <div className="glass-card" style={{ padding: '48px', textAlign: 'center' }}>
-              <div style={{ fontSize: '32px', marginBottom: '12px' }}>📜</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+                <FileText size={32} />
+              </div>
               <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '6px' }}>No Audit Logs Found</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                 No events match your current filter parameters.

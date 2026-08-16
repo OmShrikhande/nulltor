@@ -1,0 +1,13 @@
+node_modules
+frontend/node_modules
+.git
+.temp_exec
+backend/temp_exec
+backend/__pycache__
+backend/venv
+*.pyc
+*.pyo
+*.pyd
+.env.local
+.DS_Store
+Thumbs.db

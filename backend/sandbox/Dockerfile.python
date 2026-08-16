@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+# Install popular data science, machine learning, and web libraries
+RUN pip install --no-cache-dir \
+    numpy \
+    pandas \
+    requests \
+    scipy \
+    matplotlib \
+    scikit-learn \
+    beautifulsoup4 \
+    httpx
+
+# Create a non-root user for executing scripts securely
+RUN useradd -m sandboxuser
+USER sandboxuser
+
+WORKDIR /app
+CMD ["python"]

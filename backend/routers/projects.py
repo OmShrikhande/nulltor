@@ -11,8 +11,9 @@ from models.project import Project
 from models.membership import Membership
 from models.branch import Branch, BranchType
 from models.audit_log import AuditAction, ResourceType
-from schemas.project import ProjectCreate, ProjectRead, ProjectUpdate, ProjectList
+from schemas.project import ProjectCreate, ProjectRead, ProjectUpdate, ProjectList, ProjectInviteUpdate
 from services.audit_service import log_action
+from models.project import _generate_invite_code
 
 router = APIRouter()
 
@@ -216,3 +217,101 @@ async def delete_project(
         detail={"name": project.name},
         ip_address=get_client_ip(request),
     )
+
+
+# ── Join by Invite Code ───────────────────────────────────────────────────────
+
+@router.post("/join/{invite_code}", response_model=ProjectRead, summary="Join a project via invite code")
+async def join_by_invite_code(
+    invite_code: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Project).where(
+            Project.invite_code == invite_code.upper().strip(),
+            Project.is_active == True,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Invalid or expired invite code")
+
+    # Check not already a member
+    existing = await db.execute(
+        select(Membership).where(
+            Membership.project_id == project.id,
+            Membership.user_id == user.id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="You are already a member of this project")
+
+    from models.membership import MembershipRole
+    role = MembershipRole(project.invite_role) if project.invite_role else MembershipRole.member
+    membership = Membership(
+        user_id=user.id,
+        project_id=project.id,
+        role=role,
+        granted_by=None,
+    )
+    db.add(membership)
+    await db.flush()
+
+    await log_action(
+        db,
+        actor_id=user.id,
+        action=AuditAction.grant_access,
+        resource_type=ResourceType.membership,
+        resource_id=membership.id,
+        project_id=project.id,
+        detail={"join_method": "invite_code", "role": role.value},
+        ip_address=get_client_ip(request),
+    )
+
+    return ProjectRead.model_validate(project)
+
+
+# ── Regenerate Invite Code ────────────────────────────────────────────────────
+
+@router.post("/{project_id}/regenerate-code", response_model=ProjectRead, summary="Regenerate project invite code")
+async def regenerate_invite_code(
+    project_id: UUID,
+    payload: ProjectInviteUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = await _assert_project_access(db, project_id, user)
+
+    # Only lead/admin/superadmin can regenerate
+    from models.membership import MembershipRole
+    if user.role not in (UserRole.superadmin, UserRole.admin):
+        m = await db.execute(
+            select(Membership).where(
+                Membership.project_id == project_id,
+                Membership.user_id == user.id,
+                Membership.role == MembershipRole.lead,
+            )
+        )
+        if not m.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Only project leads or admins can regenerate the invite code")
+
+    project.invite_code = _generate_invite_code()
+    if payload.invite_role:
+        project.invite_role = payload.invite_role
+    await db.flush()
+
+    await log_action(
+        db,
+        actor_id=user.id,
+        action=AuditAction.create,
+        resource_type=ResourceType.project,
+        resource_id=project.id,
+        project_id=project.id,
+        detail={"action": "invite_code_regenerated"},
+        ip_address=get_client_ip(request),
+    )
+
+    return ProjectRead.model_validate(project)

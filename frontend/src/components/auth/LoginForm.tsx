@@ -54,7 +54,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <div className="login-screen">
-      {/* High-frequency Animated Floating Background Words */}
       <div className="floating-words-bg">
         {FLOATING_WORDS.map((item, idx) => (
           <div

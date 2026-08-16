@@ -1,0 +1,17 @@
+FROM node:20-slim
+
+# Install popular global node packages for scripting
+RUN npm install -g \
+    axios \
+    lodash \
+    moment
+
+# Create a non-root user
+RUN useradd -m sandboxuser
+USER sandboxuser
+
+# Tell Node where global node_modules are located
+ENV NODE_PATH=/usr/local/lib/node_modules
+
+WORKDIR /app
+CMD ["node"]

@@ -32,6 +32,9 @@ from routers import (
     logs_router,
     branches_router,
     merges_router,
+    commits_router,
+    terminal_router,
+    ai_router,
 )
 from services.audit_service import log_action
 
@@ -106,8 +109,8 @@ async def lifespan(app: FastAPI):
         await _seed_superadmin(session)
 
     logger.info(
-        f"Nulltor API ready → http://0.0.0.0:8000  "
-        f"| Docs: http://localhost:8000/docs"
+        f"Nulltor API ready → http://0.0.0.0:8001  "
+        f"| Docs: http://localhost:8001/docs"
     )
 
     yield
@@ -146,7 +149,10 @@ app.include_router(directories_router, prefix="/api/projects",               tag
 app.include_router(memberships_router, prefix="/api/projects",               tags=["Members"])
 app.include_router(branches_router,    prefix="/api/projects",               tags=["Branches"])
 app.include_router(merges_router,      prefix="/api/projects",               tags=["Merges"])
+app.include_router(commits_router,     prefix="/api",                        tags=["Commits"])
 app.include_router(logs_router,        prefix="/api/logs",                   tags=["Audit Logs"])
+app.include_router(ai_router,          prefix="/api/ai",                     tags=["AI Copilot"])
+app.include_router(terminal_router,    tags=["Terminal"])
 
 
 @app.get("/api/health", tags=["Health"])

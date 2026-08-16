@@ -52,3 +52,22 @@ class BranchMemberRead(BaseModel):
     email: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class BranchSyncPayload(BaseModel):
+    source_branch_id: uuid.UUID
+    file_id: Optional[str] = None
+    custom_snapshot: Optional[str] = None
+    sync_message: Optional[str] = None
+
+
+class BranchCompareResponse(BaseModel):
+    source_branch_id: uuid.UUID
+    target_branch_id: uuid.UUID
+    source_branch_name: str
+    target_branch_name: str
+    source_snapshot: Optional[str] = None
+    target_snapshot: Optional[str] = None
+    source_commits: list[dict] = []
+    target_commits: list[dict] = []
+

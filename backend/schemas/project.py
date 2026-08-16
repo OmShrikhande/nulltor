@@ -24,11 +24,17 @@ class ProjectRead(BaseModel):
     status: str = "live"
     owner_id: uuid.UUID
     room_salt: Optional[str]
+    invite_code: Optional[str] = None
+    invite_role: str = 'member'
     is_active: bool
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ProjectInviteUpdate(BaseModel):
+    invite_role: Optional[str] = None  # 'member' | 'lead'
 
 
 class ProjectList(BaseModel):

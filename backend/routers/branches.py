@@ -11,7 +11,15 @@ from models.project import Project
 from models.membership import Membership, MembershipRole
 from models.branch import Branch, BranchMember, BranchType
 from models.audit_log import AuditAction, ResourceType
-from schemas.branch import BranchCreate, BranchRead, BranchList, BranchMemberAdd, BranchMemberRead
+from schemas.branch import (
+    BranchCreate,
+    BranchRead,
+    BranchList,
+    BranchMemberAdd,
+    BranchMemberRead,
+    BranchSyncPayload,
+    BranchCompareResponse,
+)
 from services.audit_service import log_action
 
 router = APIRouter()
@@ -90,6 +98,16 @@ async def _can_manage_branch(
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _get_branch(db: AsyncSession, branch_id: UUID, project_id: UUID) -> Branch:
+    res = await db.execute(
+        select(Branch).where(Branch.id == branch_id, Branch.project_id == project_id)
+    )
+    branch = res.scalar_one_or_none()
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    return branch
 
 
 # ── List Branches ─────────────────────────────────────────────────────────────
@@ -182,14 +200,8 @@ async def create_branch(
         )
 
     if payload.type == BranchType.subroom:
-        # Only leads / admins / superadmin can create subrooms
-        if user.role == UserRole.member:
-            if not membership or membership.role != MembershipRole.lead:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Only project leads or admins can create subroom branches",
-                )
-
+        # Any project member can create subrooms (spec: members should be allowed)
+        pass
     # private branches: any project member can create one (no extra check needed)
 
     # Verify parent branch exists in the same project if provided
@@ -266,15 +278,21 @@ async def create_branch(
             ]
             
             if copy_params:
-                await db.execute(
-                    text("""
-                        INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
-                        SELECT :new_id, :new_branch, data, NOW()
-                        FROM file_snapshots
-                        WHERE file_id = :old_id AND branch_id = :old_branch
-                    """),
-                    copy_params
-                )
+                try:
+                    for cp in copy_params:
+                        await db.execute(
+                            text("""
+                                INSERT OR REPLACE INTO file_snapshots (file_id, branch_id, data, updated_at)
+                                SELECT :new_id, :new_branch, data, CURRENT_TIMESTAMP
+                                FROM file_snapshots
+                                WHERE file_id = :old_id AND (branch_id = :old_branch OR branch_id = 'main')
+                                ORDER BY updated_at DESC LIMIT 1
+                            """),
+                            cp
+                        )
+                    await db.flush()
+                except Exception as e:
+                    print("Failed to copy file_snapshots on branch fork:", e)
 
     await log_action(
         db,
@@ -503,3 +521,198 @@ async def remove_branch_member(
     )
 
     await db.delete(bm)
+
+
+# ── Compare Branches (For Pull / Sync and Merge Previews) ────────────────────
+
+@router.get(
+    "/{project_id}/branches/{branch_id}/compare",
+    response_model=BranchCompareResponse,
+    summary="Compare code and commits between source branch and target branch",
+)
+async def compare_branch(
+    project_id: UUID,
+    branch_id: UUID,
+    source_branch_id: UUID,
+    file_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    membership = await _assert_project_membership(db, project_id, user)
+    
+    target_branch = await _get_branch(db, branch_id, project_id)
+    source_branch = await _get_branch(db, source_branch_id, project_id)
+    await _assert_branch_access(db, target_branch, user, membership)
+    await _assert_branch_access(db, source_branch, user, membership)
+
+    source_snapshot = None
+    target_snapshot = None
+
+    if file_id:
+        from routers.merges import _resolve_target_file_id
+        source_file_id = await _resolve_target_file_id(db, project_id, file_id, source_branch_id)
+        target_file_id = await _resolve_target_file_id(db, project_id, file_id, branch_id)
+        
+        from sqlalchemy import text
+        from core.database import engine
+        try:
+            async with engine.begin() as conn:
+                # Source snapshot (look up using source_file_id and file_id, checking both source_branch_id and 'main')
+                res1 = await conn.execute(
+                    text("""
+                        SELECT data FROM file_snapshots 
+                        WHERE (file_id = :sfid OR file_id = :fid) 
+                          AND (branch_id = :sbid OR branch_id = 'main')
+                        ORDER BY updated_at DESC LIMIT 1
+                    """),
+                    {"sfid": source_file_id, "fid": file_id, "sbid": str(source_branch_id)},
+                )
+                r1 = res1.fetchone()
+                if r1:
+                    source_snapshot = r1[0]
+
+                # Target snapshot (look up using target_file_id and file_id, checking both branch_id and 'main')
+                res2 = await conn.execute(
+                    text("""
+                        SELECT data FROM file_snapshots 
+                        WHERE (file_id = :tfid OR file_id = :fid) 
+                          AND (branch_id = :tbid OR branch_id = 'main')
+                        ORDER BY updated_at DESC LIMIT 1
+                    """),
+                    {"tfid": target_file_id, "fid": file_id, "tbid": str(branch_id)},
+                )
+                r2 = res2.fetchone()
+                if r2:
+                    target_snapshot = r2[0]
+        except Exception as e:
+            print("Compare snapshot error:", e)
+
+    # Fetch recent commits for both branches
+    from models.commit import Commit
+    s_commits_q = select(Commit).where(Commit.project_id == project_id, Commit.branch_id == source_branch_id).order_by(Commit.created_at.desc()).limit(10)
+    t_commits_q = select(Commit).where(Commit.project_id == project_id, Commit.branch_id == branch_id).order_by(Commit.created_at.desc()).limit(10)
+
+    s_res = await db.execute(s_commits_q)
+    t_res = await db.execute(t_commits_q)
+
+    source_commits = [{"id": str(c.id), "message": c.message, "created_at": c.created_at.isoformat()} for c in s_res.scalars().all()]
+    target_commits = [{"id": str(c.id), "message": c.message, "created_at": c.created_at.isoformat()} for c in t_res.scalars().all()]
+
+    return BranchCompareResponse(
+        source_branch_id=source_branch_id,
+        target_branch_id=branch_id,
+        source_branch_name=source_branch.name,
+        target_branch_name=target_branch.name,
+        source_snapshot=source_snapshot,
+        target_snapshot=target_snapshot,
+        source_commits=source_commits,
+        target_commits=target_commits,
+    )
+
+
+# ── Pull / Sync Changes From Branch ───────────────────────────────────────────
+
+@router.post(
+    "/{project_id}/branches/{branch_id}/sync",
+    summary="Pull and sync updates from a source branch (e.g. main) into current branch",
+)
+async def sync_branch(
+    project_id: UUID,
+    branch_id: UUID,
+    payload: BranchSyncPayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    membership = await _assert_project_membership(db, project_id, user)
+    
+    target_branch = await _get_branch(db, branch_id, project_id)
+    source_branch = await _get_branch(db, payload.source_branch_id, project_id)
+    
+    await _assert_branch_access(db, target_branch, user, membership)
+    await _assert_branch_access(db, source_branch, user, membership)
+
+    from routers.merges import _ensure_target_file_node, _resolve_target_file_id
+    from core.database import engine
+    from sqlalchemy import text
+    from models.commit import Commit
+
+    target_file_id = None
+    synced_snapshot = payload.custom_snapshot
+
+    if payload.file_id:
+        target_file_id = await _ensure_target_file_node(db, project_id, payload.file_id, branch_id, user.id)
+        source_file_id = await _resolve_target_file_id(db, project_id, payload.file_id, payload.source_branch_id)
+
+        if not synced_snapshot:
+            # Pull snapshot from source branch
+            try:
+                async with engine.begin() as conn:
+                    res = await conn.execute(
+                        text("""
+                            SELECT data FROM file_snapshots 
+                            WHERE (file_id = :sfid OR file_id = :fid) 
+                              AND (branch_id = :bid OR branch_id = 'main')
+                            ORDER BY updated_at DESC LIMIT 1
+                        """),
+                        {"sfid": source_file_id, "fid": payload.file_id, "bid": str(payload.source_branch_id)},
+                    )
+                    row = res.fetchone()
+                    if row:
+                        synced_snapshot = row[0]
+            except Exception as e:
+                print("Failed to read source snapshot during sync:", e)
+
+        if synced_snapshot:
+            # Write to target branch snapshot
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("""
+                            INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                            VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP)
+                            ON CONFLICT (file_id, branch_id) DO UPDATE
+                            SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+                        """),
+                        {"fid": target_file_id, "bid": str(branch_id), "data": synced_snapshot},
+                    )
+            except Exception as e:
+                print("Failed to save synced snapshot:", e)
+
+            # Auto-create sync commit
+            sync_msg = payload.sync_message or f"⬇ Sync: Pulled updates from '{source_branch.name}'"
+            sync_commit = Commit(
+                project_id=project_id,
+                branch_id=branch_id,
+                file_id=target_file_id,
+                user_id=user.id,
+                message=sync_msg,
+                snapshot=synced_snapshot,
+            )
+            db.add(sync_commit)
+            await db.flush()
+
+    await log_action(
+        db,
+        actor_id=user.id,
+        action=AuditAction.create,
+        resource_type=ResourceType.branch,
+        resource_id=branch_id,
+        project_id=project_id,
+        branch_id=branch_id,
+        detail={
+            "action": "pull_sync",
+            "source_branch_id": str(payload.source_branch_id),
+            "source_branch_name": source_branch.name,
+            "target_branch_name": target_branch.name,
+            "file_id": payload.file_id,
+        },
+        ip_address=get_client_ip(request),
+    )
+
+    return {
+        "status": "success",
+        "message": f"Successfully pulled latest changes from '{source_branch.name}' into '{target_branch.name}'",
+        "target_file_id": target_file_id,
+        "snapshot": synced_snapshot,
+    }

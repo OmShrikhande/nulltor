@@ -1,17 +1,59 @@
-# Dependencies
+# ─── Python ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyd
+*.pyo
+.Python
+backend/venv/
+venv/
+env/
+.venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# ─── Node / Frontend ─────────────────────────
 node_modules/
-
-# Logs
-logs/
-*.log
+frontend/node_modules/
+frontend/dist/
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Environment / secrets
+# ─── Database & Temp Sandbox Execution ───────
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
+backend/nulltor.db
+backend/storage/snapshots/*
+!backend/storage/snapshots/.gitkeep
+snapshots/
+backend/temp_exec/
+temp_exec/
+.temp_exec/
+
+# ─── Environment & Secrets ───────────────────
 .env
 .env.*
 !.env.example
+.certs/
 
-# OS / editor
+# ─── Logs & Runtime ──────────────────────────
+logs/
+*.log
+*.pid
+*.seed
+*.tmp
+.cache/
+
+# ─── OS & IDE ────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -19,15 +61,3 @@ desktop.ini
 .vscode/
 *.swp
 *.swo
-
-# Local certs (if HTTPS is enabled later)
-.certs/
-
-# Runtime / temp
-*.pid
-*.seed
-*.tmp
-.cache/
-
-# Snapshots (persisted in PostgreSQL, not on disk)
-snapshots/

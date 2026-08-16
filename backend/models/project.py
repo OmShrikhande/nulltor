@@ -1,9 +1,16 @@
 import uuid
+import secrets
+import string
 from datetime import datetime, timezone
 from sqlalchemy import String, Boolean, Text, DateTime, ForeignKey, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
+
+
+def _generate_invite_code() -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(8))
 
 
 def utcnow():
@@ -27,6 +34,10 @@ class Project(Base):
     )
     # AES salt set when the first Socket.IO room is created for this project
     room_salt: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Invite code for join-by-code feature (8-char, regeneratable)
+    invite_code: Mapped[str] = mapped_column(String(16), nullable=False, default=_generate_invite_code, unique=True, index=True)
+    # Role granted to new members who join via the invite code
+    invite_role: Mapped[str] = mapped_column(String(20), nullable=False, default='member')
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

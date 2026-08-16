@@ -48,5 +48,6 @@ class MergeRequestRead(BaseModel):
 class MergeSnapshotResponse(BaseModel):
     """Returns both encrypted snapshots so the browser can perform the CRDT merge."""
     merge_request_id: uuid.UUID
-    pre_merge_snapshot: Optional[str]   # encrypted Yjs state of target before merge
-    source_snapshot: Optional[str]      # encrypted Yjs state of source branch
+    pre_merge_snapshot: Optional[str]   # encrypted Yjs state of source branch before merge
+    target_snapshot: Optional[str]      # encrypted Yjs state of the target branch
+    target_updated_at: Optional[str] = None  # ISO timestamp of target snapshot update (for conflict detection)

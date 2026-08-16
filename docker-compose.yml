@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # ── Nulltor Unified Application (Frontend + FastAPI + Gateway) ──────────────
+  nulltor-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nulltor_app
+    restart: unless-stopped
+    ports:
+      - "3330:3330"
+    environment:
+      - PORT=3330
+      - BACKEND_PORT=8001
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@nulltor-db:5432/nulltor
+      - DATABASE_URL_PG=postgresql://postgres:postgres@nulltor-db:5432/nulltor
+      - JWT_SECRET_KEY=change-me-to-a-random-64-char-secret
+      - SUPERADMIN_EMAIL=superadmin@nulltor.com
+      - SUPERADMIN_USERNAME=superadmin
+      - SUPERADMIN_PASSWORD=admin123
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - AI_BASE_URL=https://api.groq.com/openai/v1
+      - AI_MODEL=llama-3.3-70b-versatile
+      - ALLOWED_ORIGINS=http://localhost:3330,http://127.0.0.1:3330,http://localhost:3000,http://127.0.0.1:3000
+    depends_on:
+      nulltor-db:
+        condition: service_healthy
+    volumes:
+      - nulltor_storage:/app/backend/storage
+    networks:
+      - nulltor_net
+
+  # ── Dedicated PostgreSQL Database for Nulltor ────────────────────────────────
+  nulltor-db:
+    image: postgres:15-alpine
+    container_name: nulltor_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=nulltor
+    volumes:
+      - nulltor_pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nulltor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nulltor_net
+
+networks:
+  nulltor_net:
+    name: nulltor_isolated_network
+    driver: bridge
+
+volumes:
+  nulltor_pgdata:
+    name: nulltor_pgdata
+  nulltor_storage:
+    name: nulltor_storage

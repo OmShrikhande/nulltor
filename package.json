@@ -4,10 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host 'Port 3000 cleared.'\"",
-    "restart": "npm run stop && npm run dev"
+    "build": "cd frontend && npm run build",
+    "backend": "node run_backend.js",
+    "gateway": "node index.js",
+    "start": "concurrently -n \"FASTAPI,GATEWAY\" -c \"cyan,magenta\" \"node run_backend.js\" \"node index.js\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently -n \"BACKEND,GATEWAY,VITE\" -c \"cyan,magenta,green\" \"node run_backend.js\" \"nodemon index.js\" \"cd frontend && npm run dev\"",
+    "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3330,3000,8001 -ErrorAction SilentlyContinue | ForEach-Object { if ($_.OwningProcess) { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }; Write-Host 'Ports 3330, 3000, and 8001 cleared.'\""
   },
   "keywords": [],
   "author": "",
@@ -16,9 +19,11 @@
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
+    "concurrently": "^10.0.5",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
+    "http-proxy-middleware": "^4.2.0",
     "lib0": "^0.2.117",
     "nodemon": "^3.1.14",
     "pg": "^8.22.0",

@@ -5,6 +5,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { Modal } from '../shared/Modal';
 import { MembersModal } from './MembersModal';
 import { toast } from '../shared/Toast';
+import { Folder, GitBranch, Users, Trash2, Key, Copy, RefreshCw } from 'lucide-react';
 
 interface ProjectCardProps {
   project: ProjectRead;
@@ -18,9 +19,15 @@ interface ProjectCardProps {
 export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, onDeleted, onUpdated }: ProjectCardProps) {
   const navigate = useNavigate();
   const [showMembers, setShowMembers] = useState(false);
+  const [showCode, setShowCode] = useState(false);
+  const [currentCode, setCurrentCode] = useState(project.invite_code);
+  const [regenLoading, setRegenLoading] = useState(false);
   const [status, setStatus] = useState<ProjectStatus>((project.status as ProjectStatus) || 'live');
   const [loadingStatus, setLoadingStatus] = useState(false);
   const setProject = useProjectStore((s) => s.setProject);
+
+  // Only the creator (owner) and super admins can see/manage the invite code
+  const canSeeInviteCode = project.owner_id === currentUserId || myRole === 'superadmin';
 
   async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
@@ -50,6 +57,21 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
     }
   }
 
+  async function handleRegenCode(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm('Regenerate invite code? The old code will stop working immediately.')) return;
+    setRegenLoading(true);
+    try {
+      const updated = await projectsApi.regenerateCode(project.id);
+      setCurrentCode(updated.invite_code);
+      toast('Invite code regenerated!', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Failed to regenerate code', 'error');
+    } finally {
+      setRegenLoading(false);
+    }
+  }
+
   function open() {
     setProject(project);
     navigate(`/ide/${project.id}`);
@@ -67,7 +89,9 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
         onKeyDown={(e) => e.key === 'Enter' && open()}
       >
         <div className="project-card-top">
-          <div className="project-folder-icon">📁</div>
+          <div className="project-folder-icon" style={{ display: 'flex', alignItems: 'center' }}>
+            <Folder size={20} />
+          </div>
 
           <div onClick={(e) => e.stopPropagation()}>
             <span className={`status-pill ${status}`}>
@@ -107,13 +131,13 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid var(--border)', fontSize: '11.5px', color: 'var(--text-muted)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>🌿 {branchCount} branch{branchCount !== 1 ? 'es' : ''}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><GitBranch size={14} /> {branchCount} branch{branchCount !== 1 ? 'es' : ''}</span>
             <button
               className="btn btn-ghost btn-sm"
-              style={{ padding: '2px 6px', fontSize: '11px' }}
+              style={{ padding: '2px 6px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
               onClick={(e) => { e.stopPropagation(); setShowMembers(true); }}
             >
-              👥 Members
+              <Users size={12} /> Members
             </button>
           </div>
 
@@ -124,10 +148,37 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
               onClick={handleDelete}
               title="Delete Project"
             >
-              🗑
+              <Trash2 size={16} />
             </button>
           )}
         </div>
+
+        {/* Invite Code Row - Strictly restricted to owner or superadmin */}
+        {canSeeInviteCode && (
+          <div onClick={(e) => e.stopPropagation()} style={{ paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+            {showCode && currentCode ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(1,239,172,0.07)', border: '1px solid rgba(1,239,172,0.2)', borderRadius: 'var(--radius-xs)', padding: '5px 8px' }}>
+                <Key size={12} style={{ color: 'var(--aurora-mint)', flexShrink: 0 }} />
+                <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--aurora-mint)', flex: 1 }}>{currentCode}</span>
+                <button className="btn-icon" style={{ width: 18, height: 18 }} title="Copy code" onClick={() => { navigator.clipboard.writeText(currentCode!); toast('Code copied!', 'success'); }}>
+                  <Copy size={11} />
+                </button>
+                <button className="btn-icon" style={{ width: 18, height: 18 }} title="Regenerate" onClick={handleRegenCode} disabled={regenLoading}>
+                  <RefreshCw size={11} style={{ animation: regenLoading ? 'spin 1s linear infinite' : undefined }} />
+                </button>
+                <button className="btn-icon" style={{ width: 18, height: 18 }} title="Hide" onClick={() => setShowCode(false)}>×</button>
+              </div>
+            ) : (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', width: '100%', justifyContent: 'center' }}
+                onClick={() => setShowCode(true)}
+              >
+                <Key size={11} /> Show Invite Code
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {showMembers && (
@@ -215,8 +266,8 @@ export function CreateProjectModal({ onClose, onCreated }: {
       <div className="form-field">
         <label style={{ color: '#0d9488', fontWeight: 700 }}>Initial Status Option</label>
         <select value={status} onChange={(e) => setStatus(e.target.value as ProjectStatus)}>
-          <option value="live">🟢 Live — active development & real-time collaboration</option>
-          <option value="offline">⚪ Offline — local storage only</option>
+          <option value="live">Live — active development & real-time collaboration</option>
+          <option value="offline">Offline — local storage only</option>
         </select>
       </div>
 

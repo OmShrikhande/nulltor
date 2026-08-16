@@ -6,6 +6,9 @@ from .memberships import router as memberships_router
 from .logs import router as logs_router
 from .branches import router as branches_router
 from .merges import router as merges_router
+from .commits import router as commits_router
+from .terminal import router as terminal_router
+from .ai import router as ai_router
 
 __all__ = [
     "auth_router",
@@ -16,4 +19,7 @@ __all__ = [
     "logs_router",
     "branches_router",
     "merges_router",
+    "commits_router",
+    "terminal_router",
+    "ai_router",
 ]
