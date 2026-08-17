@@ -2,7 +2,7 @@ import os
 import json
 import urllib.request
 import urllib.error
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +32,7 @@ class AgentRunRequest(BaseModel):
     active_file_name: Optional[str] = None
     active_file_content: Optional[str] = None
     api_key: Optional[str] = None
-    model: Optional[str] = "llama-3.3-70b-versatile"
+    model: Optional[str] = "openai/gpt-oss-120b"
     base_url: Optional[str] = "https://api.groq.com/openai/v1"
 
 class ToolExecutionResult(BaseModel):
@@ -259,7 +259,7 @@ async def run_agent(
 ):
     api_key = req.api_key or settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
     base_url = req.base_url or settings.AI_BASE_URL or os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
-    model = req.model or settings.AI_MODEL or os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
+    model = req.model or settings.AI_MODEL or os.getenv("AI_MODEL", "openai/gpt-oss-120b")
 
     # Fetch project files for context
     project_files = []

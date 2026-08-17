@@ -64,14 +64,15 @@ END $$;
 
 -- Users
 CREATE TABLE IF NOT EXISTS users (
-    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(255) NOT NULL UNIQUE,
-    username        VARCHAR(100) NOT NULL UNIQUE,
-    hashed_password VARCHAR(255) NOT NULL,
-    role            user_role    NOT NULL DEFAULT 'member',
-    is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    email                    VARCHAR(255) NOT NULL UNIQUE,
+    username                 VARCHAR(100) NOT NULL UNIQUE,
+    hashed_password          VARCHAR(255) NOT NULL,
+    requires_password_change BOOLEAN      NOT NULL DEFAULT FALSE,
+    role                     user_role    NOT NULL DEFAULT 'member',
+    is_active                BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- Projects
@@ -79,8 +80,11 @@ CREATE TABLE IF NOT EXISTS projects (
     id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     name        VARCHAR(255) NOT NULL,
     description TEXT,
+    status      VARCHAR(50)  NOT NULL DEFAULT 'live',
     owner_id    UUID         NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     room_salt   VARCHAR(255),
+    invite_code VARCHAR(16)  UNIQUE,
+    invite_role VARCHAR(20)  NOT NULL DEFAULT 'member',
     is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
