@@ -28,11 +28,40 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
   const branchType = currentBranch?.type ?? 'main';
 
   return (
+<<<<<<< Updated upstream
     <div className="branch-selector" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
       {/* Active Subroom Pill */}
       <div className={`branch-pill ${branchType}`} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', borderRadius: 'var(--radius-full)' }}>
         <span style={{ fontSize: '14px' }}>{BRANCH_ICONS[branchType]}</span>
         <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.8, fontWeight: 700 }}>
+=======
+    <div className="branch-selector" ref={dropdownRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+      
+      {/* Custom Modern Trigger Pill */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '4px 12px',
+          borderRadius: '20px',
+          background: colorStyle.bg,
+          border: `1px solid ${colorStyle.border}`,
+          color: colorStyle.text,
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          boxShadow: isOpen ? `0 0 12px ${colorStyle.border}` : 'none',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#eab308', display: 'inline-block' }} />
+          {BRANCH_ICONS[branchType]}
+        </span>
+        <span style={{ textTransform: 'uppercase', fontSize: '10px', letterSpacing: '0.04em', opacity: 0.8 }}>
+>>>>>>> Stashed changes
           {BRANCH_LABELS[branchType]}:
         </span>
         <select

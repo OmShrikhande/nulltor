@@ -4,8 +4,14 @@ import { type UserRead } from '../api/auth';
 import { Sidebar } from '../components/shared/Sidebar';
 import { toast } from '../components/shared/Toast';
 import { Modal } from '../components/shared/Modal';
+<<<<<<< Updated upstream
+=======
+import { Shield, UserPlus, Key, Mail, User, ShieldAlert, CheckCircle2, XCircle, Menu, Crown, Laptop } from 'lucide-react';
+import { useUIStore } from '../store/uiStore';
+>>>>>>> Stashed changes
 
 export function SystemUsersPage() {
+  const { toggleSidebar } = useUIStore();
   const [users, setUsers] = useState<UserRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -63,14 +69,35 @@ export function SystemUsersPage() {
       <div className="main-content">
         <div className="page-container">
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <div>
-              <h1 style={{ fontSize: '28px', fontWeight: 800 }}>
-                System <span className="text-gradient">Governance</span> & User Hierarchy
-              </h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13.5px', marginTop: '4px' }}>
-                Manage user access permissions, elevate roles according to security hierarchy, and add new system members.
-              </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <button
+                className="btn-icon"
+                onClick={toggleSidebar}
+                title="Toggle Navigation Menu"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  background: 'var(--bg-1)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Menu size={18} />
+              </button>
+
+              <div>
+                <h1 style={{ fontSize: '24px', fontWeight: 800 }}>
+                  System <span style={{ color: 'var(--sapphire-light)' }}>Governance</span> & User Hierarchy
+                </h1>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>
+                  Manage user access permissions, elevate roles according to security hierarchy, and add new system members.
+                </p>
+              </div>
             </div>
 
             <button className="btn btn-primary" onClick={() => setShowCreate(true)}>

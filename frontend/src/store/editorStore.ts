@@ -35,10 +35,35 @@ function detectLanguage(filename: string): string {
   return map[ext] ?? 'plaintext';
 }
 
+<<<<<<< Updated upstream
 export const useEditorStore = create<EditorState>((set) => ({
+=======
+interface EditorState {
+  openFile: DirectoryNode | null;
+  openTabs: DirectoryNode[];
+  language: string;
+  isDirty: boolean;
+  fileErrors: Record<string, number>;
+  setOpenFile: (file: DirectoryNode | null) => void;
+  openTab: (file: DirectoryNode) => void;
+  closeTab: (id: string) => void;
+  setLanguage: (lang: string) => void;
+  setDirty: (dirty: boolean) => void;
+  setFileErrors: (fileId: string, errorCount: number) => void;
+  // alias used by some components
+  setFile: (file: DirectoryNode | null) => void;
+}
+
+export const useEditorStore = create<EditorState>((set, get) => ({
+>>>>>>> Stashed changes
   openFile: null,
   language: 'plaintext',
   isDirty: false,
+  fileErrors: {},
+  setFileErrors: (fileId, errorCount) =>
+    set((state) => ({
+      fileErrors: { ...state.fileErrors, [fileId]: errorCount },
+    })),
 
   setOpenFile: (file) =>
     set({

@@ -2,14 +2,30 @@ import { useEffect, useState, useCallback } from 'react';
 import { logsApi, type AuditLogRead } from '../api/logs';
 import { Sidebar } from '../components/shared/Sidebar';
 import { toast } from '../components/shared/Toast';
+<<<<<<< Updated upstream
+=======
+import { Trash2, Key, GitBranch, GitMerge, Edit, FileText, PlusCircle, ChevronDown, ChevronRight, Menu } from 'lucide-react';
+import { useUIStore } from '../store/uiStore';
+>>>>>>> Stashed changes
 
 export function AuditLogsPage() {
+  const { toggleSidebar } = useUIStore();
   const [logs, setLogs] = useState<AuditLogRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [resourceFilter, setResourceFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const loadLogs = useCallback(async (p: number) => {
     setLoading(true);
@@ -65,14 +81,35 @@ export function AuditLogsPage() {
       <div className="main-content">
         <div className="page-container">
           {/* Header & Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <div>
-              <h1 style={{ fontSize: '28px', fontWeight: 800 }}>
-                System Audit <span className="text-gradient">Telemetry</span>
-              </h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13.5px', marginTop: '4px' }}>
-                Alternate timeline stream of security actions across workspaces, branches, and user sessions.
-              </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <button
+                className="btn-icon"
+                onClick={toggleSidebar}
+                title="Toggle Navigation Menu"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  background: 'var(--bg-1)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Menu size={18} />
+              </button>
+
+              <div>
+                <h1 style={{ fontSize: '24px', fontWeight: 800 }}>
+                  System Audit <span style={{ color: 'var(--sapphire-light)' }}>Telemetry</span>
+                </h1>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>
+                  Alternate timeline stream of security actions across workspaces, branches, and user sessions.
+                </p>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -122,10 +159,10 @@ export function AuditLogsPage() {
             </div>
           </div>
 
-          {/* Alternating Branch Timeline Stream */}
+          {/* Expandable Audit Telemetry Table */}
           {loading && logs.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-secondary)' }}>
-              Loading audit telemetry timeline…
+              Loading audit telemetry logs…
             </div>
           ) : filteredLogs.length === 0 ? (
             <div className="glass-card" style={{ padding: '48px', textAlign: 'center' }}>
@@ -136,71 +173,161 @@ export function AuditLogsPage() {
               </p>
             </div>
           ) : (
-            <div className="telemetry-timeline-wrapper">
-              <div className="telemetry-branch-stem" />
+            <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
+              {/* Table Header */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '40px 1.8fr 1.5fr 1.2fr 1.2fr',
+                  padding: '12px 16px',
+                  background: 'var(--bg-2)',
+                  borderBottom: '1px solid var(--border)',
+                  fontSize: '11.5px',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--text-secondary)',
+                  alignItems: 'center',
+                }}
+              >
+                <div />
+                <div>Action / Event</div>
+                <div>User / Actor</div>
+                <div>Resource</div>
+                <div style={{ textAlign: 'right' }}>Timestamp</div>
+              </div>
 
-              {filteredLogs.map((log, index) => {
-                const isLeft = index % 2 === 0;
-                const dateObj = new Date(log.created_at);
-                const dateStr = dateObj.toLocaleDateString();
-                const timeStr = dateObj.toLocaleTimeString();
+              {/* Table Rows */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {filteredLogs.map((log) => {
+                  const isExpanded = expandedIds.has(log.id);
+                  const dateObj = new Date(log.created_at);
+                  const dateStr = dateObj.toLocaleDateString();
+                  const timeStr = dateObj.toLocaleTimeString();
 
-                return (
-                  <div key={log.id} className={`telemetry-row ${isLeft ? 'left' : 'right'}`}>
-                    {/* Central Branch Node */}
-                    <div className="telemetry-node-center">
-                      {getActionIcon(log.action)}
-                    </div>
+                  return (
+                    <div
+                      key={log.id}
+                      style={{
+                        borderBottom: '1px solid var(--border)',
+                        transition: 'background 0.15s ease',
+                      }}
+                    >
+                      {/* Main Clickable Row */}
+                      <div
+                        onClick={() => toggleExpand(log.id)}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '40px 1.8fr 1.5fr 1.2fr 1.2fr',
+                          padding: '14px 16px',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          background: isExpanded ? 'var(--bg-2)' : 'transparent',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isExpanded) e.currentTarget.style.background = 'var(--bg-2)';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isExpanded) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </div>
 
-                    {/* Alternating Card Content */}
-                    <div className="telemetry-card-content">
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span className={`branch-pill ${getActionColorClass(log.action)}`}>
-                          {log.action.toUpperCase()}
-                        </span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span className={`branch-pill ${getActionColorClass(log.action)}`} style={{ padding: '2px 8px', fontSize: '10.5px' }}>
+                            {log.action.toUpperCase()}
+                          </span>
+                          <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
+                            {log.action}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                          {log.actor_id ? log.actor_id : 'System'}
+                        </div>
+
+                        <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                          {log.resource_type || 'General'}
+                        </div>
+
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {dateStr} · {timeStr}
-                        </span>
+                        </div>
                       </div>
 
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-                        User: <span style={{ color: 'var(--palette-sky)' }}>{log.actor_id ? log.actor_id.slice(0, 8) : 'System'}</span>
-                      </div>
+                      {/* Dropdown Expandable Details Section */}
+                      {isExpanded && (
+                        <div
+                          style={{
+                            padding: '16px 20px 20px 56px',
+                            background: 'var(--bg-0)',
+                            borderTop: '1px solid var(--border)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px',
+                            animation: 'slideDown 0.15s ease-out',
+                          }}
+                        >
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                            <div style={{ padding: '10px 12px', background: 'var(--bg-1)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '3px' }}>Actor ID</div>
+                              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+                                {log.actor_id || 'System Event'}
+                              </div>
+                            </div>
 
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                        {log.resource_type && (
-                          <span>Target: <strong>{log.resource_type}</strong></span>
-                        )}
-                        {log.ip_address && (
-                          <span>IP: <code className="font-mono">{log.ip_address}</code></span>
-                        )}
-                      </div>
+                            <div style={{ padding: '10px 12px', background: 'var(--bg-1)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '3px' }}>Target Resource</div>
+                              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                {log.resource_type || 'N/A'} {log.resource_id ? `(${log.resource_id})` : ''}
+                              </div>
+                            </div>
 
-                      {log.detail && Object.keys(log.detail).length > 0 && (
-                        <details style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border)', fontSize: '11.5px' }}>
-                          <summary style={{ cursor: 'pointer', color: 'var(--aurora-mint)', fontWeight: 600 }}>
-                            Inspect Event Payload
-                          </summary>
-                          <pre
-                            className="font-mono"
-                            style={{
-                              background: 'var(--bg-2)',
-                              padding: '8px 10px',
-                              borderRadius: 'var(--radius-xs)',
-                              marginTop: '6px',
-                              fontSize: '11px',
-                              overflowX: 'auto',
-                              color: 'var(--text-primary)',
-                            }}
-                          >
-                            {JSON.stringify(log.detail, null, 2)}
-                          </pre>
-                        </details>
+                            <div style={{ padding: '10px 12px', background: 'var(--bg-1)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '3px' }}>Client IP Address</div>
+                              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                {log.ip_address || '127.0.0.1 (Local)'}
+                              </div>
+                            </div>
+
+                            <div style={{ padding: '10px 12px', background: 'var(--bg-1)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '3px' }}>Logged Timestamp</div>
+                              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                {dateObj.toISOString()}
+                              </div>
+                            </div>
+                          </div>
+
+                          {log.detail && Object.keys(log.detail).length > 0 && (
+                            <div style={{ marginTop: '4px' }}>
+                              <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                                Event Payload & Diagnostics:
+                              </div>
+                              <pre
+                                className="font-mono"
+                                style={{
+                                  background: 'var(--bg-1)',
+                                  padding: '12px 14px',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--border)',
+                                  fontSize: '11.5px',
+                                  overflowX: 'auto',
+                                  color: 'var(--text-primary)',
+                                  margin: 0,
+                                }}
+                              >
+                                {JSON.stringify(log.detail, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
 

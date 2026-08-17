@@ -6,10 +6,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Nulltor — collaborative local-network IDE with VS Code-style editing, GitHub-style project management, and end-to-end encrypted real-time sync." />
     <title>Nulltor IDE</title>
+<<<<<<< Updated upstream
     <script type="module" crossorigin src="/assets/index-BPKFm7j9.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-eX1h0prz.css">
   </head>
   <body>
     <div id="root"></div>
+=======
+    <style>
+      /* Hide default floating Botpress launcher bubble button */
+      .bp-widget-widget,
+      .bp-widget-launcher,
+      .bpw-widget-btn,
+      div[class*="bp-widget-widget"],
+      div[class*="bpw-widget-btn"],
+      div[class*="bp-widget-bubble"],
+      div[class*="launcher"],
+      button[aria-label="Open Webchat"],
+      button[aria-label="Toggle Webchat"],
+      button[aria-label="Open chat"],
+      button[aria-label="Toggle chat"],
+      div[data-testid="webchat-launcher"],
+      button[data-testid="webchat-launcher"],
+      #bp-webchat-container > button,
+      .bp-chat-button {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-Cd88S5al.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BvhHuDFz.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdn.botpress.cloud/webchat/v5.0/inject.js"></script>
+    <script src="https://files.bpcontent.cloud/2026/08/17/10/20260817100224-YVKGWMB0.js" defer></script>
+    <script>
+      (function() {
+        function suppressFloatingBubble() {
+          // Check all direct children of body except #root
+          const bodyChildren = document.body.children;
+          for (let i = 0; i < bodyChildren.length; i++) {
+            const el = bodyChildren[i];
+            if (el.id === 'root' || el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
+            
+            const rect = el.getBoundingClientRect();
+            // Small bubble button in bottom right corner
+            if (rect.width > 0 && rect.width <= 140 && rect.height <= 140 && rect.bottom >= window.innerHeight - 180 && rect.right >= window.innerWidth - 180) {
+              el.style.setProperty('display', 'none', 'important');
+              el.style.setProperty('visibility', 'hidden', 'important');
+              el.style.setProperty('opacity', '0', 'important');
+              el.style.setProperty('pointer-events', 'none', 'important');
+            }
+          }
+
+          // Check inside all shadow roots
+          const allEls = document.querySelectorAll('*');
+          allEls.forEach(function(el) {
+            if (el.shadowRoot) {
+              const shadowChildren = el.shadowRoot.querySelectorAll('*');
+              shadowChildren.forEach(function(sEl) {
+                const sRect = sEl.getBoundingClientRect();
+                if (sRect.width > 0 && sRect.width <= 140 && sRect.height <= 140 && sRect.bottom >= window.innerHeight - 180 && sRect.right >= window.innerWidth - 180) {
+                  sEl.style.setProperty('display', 'none', 'important');
+                  sEl.style.setProperty('visibility', 'hidden', 'important');
+                  sEl.style.setProperty('opacity', '0', 'important');
+                  sEl.style.setProperty('pointer-events', 'none', 'important');
+                }
+              });
+            }
+          });
+        }
+
+        setInterval(suppressFloatingBubble, 60);
+        window.addEventListener('load', suppressFloatingBubble);
+        document.addEventListener('DOMContentLoaded', suppressFloatingBubble);
+      })();
+    </script>
+>>>>>>> Stashed changes
   </body>
 </html>

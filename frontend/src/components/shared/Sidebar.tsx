@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useUIStore } from '../../store/uiStore';
 import { useTheme } from '../../context/ThemeContext';
 import { NulltorLogo } from './NulltorLogo';
 
@@ -7,7 +8,15 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { theme, toggleTheme } = useTheme();
+<<<<<<< Updated upstream
   const isSuperadmin = user?.role === 'superadmin';
+=======
+  const { sidebarOpen } = useUIStore();
+
+  if (!sidebarOpen) {
+    return null;
+  }
+>>>>>>> Stashed changes
 
   function handleLogout() {
     logout();
@@ -18,7 +27,7 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
+      <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <NulltorLogo size="md" />
       </div>
 
@@ -37,7 +46,11 @@ export function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="user-badge" onClick={() => navigate('/profile')} title="View User Profile">
+        <div
+          className="user-badge"
+          onClick={() => navigate('/profile')}
+          title="View User Profile"
+        >
           <div className="user-avatar">{initials}</div>
           <div className="user-info">
             <span className="user-name">{user?.username ?? '—'}</span>
@@ -63,13 +76,44 @@ export function Sidebar() {
   );
 }
 
+<<<<<<< Updated upstream
 function NavItem({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
   const path = window.location.hash.replace('#', '');
   const active = path.startsWith(href);
   return (
     <a href={`#${href}`} className={`sidebar-link${active ? ' active' : ''}`}>
+=======
+function NavItem({
+  href,
+  label,
+  icon,
+  currentPath,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  currentPath: string;
+}) {
+  const navigate = useNavigate();
+  const active = currentPath.startsWith(href);
+  return (
+    <button
+      onClick={() => navigate(href)}
+      className={`sidebar-link${active ? ' active' : ''}`}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px 12px',
+      }}
+    >
+>>>>>>> Stashed changes
       {icon}
       <span>{label}</span>
     </a>
   );
 }
+
+

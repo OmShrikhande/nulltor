@@ -7,29 +7,6 @@ interface LoginFormProps {
   onSuccess: () => void;
 }
 
-const FLOATING_WORDS = [
-  { text: 'Nulltor', left: '4%', delay: '-1s' },
-  { text: 'E2EE Encryption', left: '15%', delay: '-5s' },
-  { text: 'Real-Time Yjs', left: '26%', delay: '-2s' },
-  { text: 'Branch Subrooms', left: '38%', delay: '-7s' },
-  { text: 'Zero-Knowledge', left: '50%', delay: '-3s' },
-  { text: 'FastAPI Backend', left: '62%', delay: '-8s' },
-  { text: 'Socket.IO Sync', left: '74%', delay: '-4s' },
-  { text: 'Monaco Editor', left: '85%', delay: '-6s' },
-  { text: 'Quantum Mesh', left: '93%', delay: '-1.5s' },
-  { text: 'Collaborative IDE', left: '10%', delay: '-3.5s' },
-  { text: 'SQLite / Postgres', left: '22%', delay: '-6.5s' },
-  { text: 'CRDT Deltas', left: '32%', delay: '-0.5s' },
-  { text: 'Audit Telemetry', left: '44%', delay: '-4.5s' },
-  { text: 'Nulltor Engine', left: '55%', delay: '-8.5s' },
-  { text: 'System Governance', left: '68%', delay: '-2.5s' },
-  { text: 'Multi-User Sync', left: '78%', delay: '-7.5s' },
-  { text: 'AES-256 GCM', left: '88%', delay: '-5.2s' },
-  { text: 'Passphrase Vault', left: '6%', delay: '-7.8s' },
-  { text: 'Nulltor IDE', left: '48%', delay: '-1.8s' },
-  { text: 'Code Workspace', left: '82%', delay: '-3.2s' },
-];
-
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const login = useAuthStore((s) => s.login);
   const [email, setEmail] = useState('');
@@ -54,6 +31,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <div className="login-screen">
+<<<<<<< Updated upstream
       {/* High-frequency Animated Floating Background Words */}
       <div className="floating-words-bg">
         {FLOATING_WORDS.map((item, idx) => (
@@ -69,6 +47,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
       <div className="login-glow" />
 
+=======
+>>>>>>> Stashed changes
       <div className="login-card">
         <div className="login-logo">
           <NulltorLogo size="lg" />

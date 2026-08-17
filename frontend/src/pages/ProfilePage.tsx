@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
+import { useUIStore } from '../store/uiStore';
 import { projectsApi, type ProjectRead } from '../api/projects';
 import { Sidebar } from '../components/shared/Sidebar';
 import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { ForcePasswordChange } from '../components/auth/ForcePasswordChange';
 import { Modal } from '../components/shared/Modal';
 import { toast } from '../components/shared/Toast';
+<<<<<<< Updated upstream
+=======
+import { Folder, Lock, Menu } from 'lucide-react';
+>>>>>>> Stashed changes
 
 export function ProfilePage() {
   const { user } = useAuthStore();
+  const { toggleSidebar } = useUIStore();
   const [projects, setProjects] = useState<ProjectRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
@@ -43,9 +49,27 @@ export function ProfilePage() {
       <div className="main-content">
         <div className="page-container">
           <div className="profile-container">
-            {/* Header Title Bar with Nulltor Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            {/* Header Title Bar with Nulltor Logo and Menu button */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <button
+                  className="btn-icon"
+                  onClick={toggleSidebar}
+                  title="Toggle Navigation Menu"
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    background: 'var(--bg-1)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    color: 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Menu size={18} />
+                </button>
                 <NulltorLogo size="lg" />
                 <div>
                   <h1 style={{ fontSize: '26px', fontWeight: 800 }}>
