@@ -9,6 +9,7 @@ from .merges import router as merges_router
 from .commits import router as commits_router
 from .terminal import router as terminal_router
 from .ai import router as ai_router
+from .tools import router as tools_router
 
 __all__ = [
     "auth_router",
@@ -22,4 +23,5 @@ __all__ = [
     "commits_router",
     "terminal_router",
     "ai_router",
+    "tools_router",
 ]

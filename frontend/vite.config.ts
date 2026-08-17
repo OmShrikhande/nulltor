@@ -49,5 +49,6 @@ export default defineConfig({
   },
   build: {
     outDir: '../public_react',   // built output served by Node.js in production
+    emptyOutDir: true,
   },
 })

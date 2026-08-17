@@ -24,6 +24,7 @@ import { TimelinePanel } from '../components/ide/TimelinePanel';
 import { StatusBar } from '../components/ide/StatusBar';
 import { ActivityBar, type ActivityTab } from '../components/ide/ActivityBar';
 import { SearchPanel } from '../components/ide/SearchPanel';
+import { BotpressPanel } from '../components/ide/BotpressPanel';
 import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from '../components/shared/Toast';
@@ -235,6 +236,154 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     projectId ?? null,
     currentBranch?.id ?? null
   );
+
+  // ── Global Botpress & AI Tool Bridge with Full File Permissions ─────────────
+  useEffect(() => {
+    const bridge = {
+      createFile: async (filename: string, initialContent: string = '') => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'create_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content: initialContent })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to create file');
+          toast(`Botpress created '${filename}'`, 'success');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Create failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      readFile: async (filename?: string) => {
+        const target = filename || openFile?.name || 'active file';
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'read_file', project_id: projectId, branch_id: currentBranch?.id, file_path: target })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to read file');
+          return data;
+        } catch (err: any) {
+          toast(`Read failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      writeFile: async (filename: string, content: string) => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'write_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to write file');
+          if (openFile?.name === filename) {
+            handleApplyAgentCode(filename, content);
+          }
+          toast(`Botpress updated '${filename}'`, 'success');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Write failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      modifyFile: async (filename: string, content: string) => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'modify_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to modify file');
+          if (openFile?.name === filename) {
+            handleApplyAgentCode(filename, content);
+          }
+          toast(`Botpress modified '${filename}'`, 'success');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Modify failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      deleteFile: async (filename: string) => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'delete_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to delete file');
+          toast(`Botpress deleted '${filename}'`, 'info');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      listFiles: async () => {
+        const res = await fetch('/api/tools/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: JSON.stringify({ action: 'list_files', project_id: projectId, branch_id: currentBranch?.id })
+        });
+        return await res.json();
+      },
+      getActiveFile: () => openFile?.name || null,
+      getActiveCode: () => editorValue,
+      getProjectId: () => projectId,
+      getBranchId: () => currentBranch?.id || null,
+    };
+
+    (window as any).nulltorTools = bridge;
+    (window as any).botpressTools = bridge;
+
+    const handleMessage = async (event: MessageEvent) => {
+      if (!event.data || typeof event.data !== 'object') return;
+      const { type, action, file_path, content } = event.data;
+      if (type === 'nulltor_tool' || type === 'botpress_tool') {
+        if (action === 'create_file' && file_path) await bridge.createFile(file_path, content || '');
+        else if (action === 'write_file' && file_path) await bridge.writeFile(file_path, content || '');
+        else if (action === 'modify_file' && file_path) await bridge.modifyFile(file_path, content || '');
+        else if (action === 'delete_file' && file_path) await bridge.deleteFile(file_path);
+        else if (action === 'read_file' && file_path) await bridge.readFile(file_path);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [projectId, currentBranch, openFile, editorValue]);
+
+  function toggleBotpressChat() {
+    const bp = (window as any).botpress;
+    if (bp) {
+      const iframes = document.querySelectorAll('iframe');
+      iframes.forEach((iframe) => {
+        if (iframe.src.includes('botpress') || iframe.id.includes('bp') || iframe.name.includes('bp')) {
+          iframe.style.removeProperty('display');
+          iframe.style.removeProperty('opacity');
+          iframe.style.removeProperty('pointer-events');
+        }
+      });
+
+      if (typeof bp.open === 'function') {
+        bp.open();
+      } else if (typeof bp.sendEvent === 'function') {
+        bp.sendEvent({ type: 'toggle' });
+      }
+    } else {
+      toast('Botpress Webchat is initializing...', 'info');
+    }
+  }
 
   async function handlePullSyncComplete(newSnapshotBase64?: string | null) {
     if (newSnapshotBase64 && doc) {
@@ -648,13 +797,9 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         <ActivityBar 
           activeTab={activeTab} 
           onChangeTab={(tab) => {
-            if (tab === 'agent') {
-              setShowAgentPanel((prev) => !prev);
-              setShowTeamDrawer(false);
-            } else {
-              setActiveTab(tab);
-            }
+            setActiveTab(tab);
           }} 
+          onBotClick={toggleBotpressChat}
           onProfileClick={() => navigate('/profile')}
           onSettingsClick={() => navigate('/settings')}
         />
@@ -723,15 +868,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               onClose={() => setActiveTab('explorer')}
             />
           )}
-          {activeTab === 'agent' && (
-            <AgentPanel
-              projectId={projectId}
-              branchId={currentBranch?.id}
-              currentCode={editorValue}
-              onApplyCode={handleApplyAgentCode}
-            />
-          )}
-          {activeTab !== 'explorer' && activeTab !== 'search' && activeTab !== 'git' && activeTab !== 'agent' && (
+          {activeTab !== 'explorer' && activeTab !== 'search' && activeTab !== 'git' && (
             <div style={{ padding: '16px', color: 'var(--text-secondary)' }}>
               {activeTab} panel coming soon.
             </div>

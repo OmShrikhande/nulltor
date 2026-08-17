@@ -35,6 +35,7 @@ from routers import (
     commits_router,
     terminal_router,
     ai_router,
+    tools_router,
 )
 from services.audit_service import log_action
 
@@ -152,6 +153,7 @@ app.include_router(merges_router,      prefix="/api/projects",               tag
 app.include_router(commits_router,     prefix="/api",                        tags=["Commits"])
 app.include_router(logs_router,        prefix="/api/logs",                   tags=["Audit Logs"])
 app.include_router(ai_router,          prefix="/api/ai",                     tags=["AI Copilot"])
+app.include_router(tools_router,       prefix="/api",                        tags=["AI Tools"])
 app.include_router(terminal_router,    tags=["Terminal"])
 
 

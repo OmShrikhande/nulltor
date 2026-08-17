@@ -193,6 +193,33 @@ svg { display: block; flex-shrink: 0; }
   white-space: nowrap;
   animation: cursorPulse 2s infinite ease-in-out;
 }
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ─── Hide Botpress Floating Bubble Launcher Button ─────────────────────── */
+.bp-widget-widget,
+.bp-widget-launcher,
+.bpw-widget-btn,
+div[class*="bp-widget-widget"],
+div[class*="bpw-widget-btn"],
+div[class*="bp-widget-bubble"],
+div[class*="launcher"],
+button[aria-label="Open Webchat"],
+button[aria-label="Toggle Webchat"],
+button[aria-label="Open chat"],
+button[aria-label="Toggle chat"],
+div[data-testid="webchat-launcher"],
+button[data-testid="webchat-launcher"],
+#bp-webchat-container > button,
+.bp-chat-button {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
 @keyframes cursorPulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.04); opacity: 0.85; }

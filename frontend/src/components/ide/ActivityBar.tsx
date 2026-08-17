@@ -7,9 +7,10 @@ interface ActivityBarProps {
   onChangeTab: (tab: ActivityTab) => void;
   onProfileClick: () => void;
   onSettingsClick?: () => void;
+  onBotClick?: () => void;
 }
 
-export function ActivityBar({ activeTab, onChangeTab, onProfileClick, onSettingsClick }: ActivityBarProps) {
+export function ActivityBar({ activeTab, onChangeTab, onProfileClick, onSettingsClick, onBotClick }: ActivityBarProps) {
   return (
     <div className="ide-activity-bar">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
@@ -23,9 +24,9 @@ export function ActivityBar({ activeTab, onChangeTab, onProfileClick, onSettings
           <GitBranch size={24} strokeWidth={1.5} />
         </div>
         <div 
-          className={`activity-bar-icon ${activeTab === 'agent' ? 'active' : ''}`} 
-          onClick={() => onChangeTab('agent')} 
-          title="AI Agent Assistant"
+          className="activity-bar-icon" 
+          onClick={onBotClick || (() => onChangeTab('agent'))} 
+          title="DevBot AI Assistant (Botpress)"
         >
           <Bot size={24} strokeWidth={1.5} />
         </div>
