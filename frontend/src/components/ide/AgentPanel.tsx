@@ -69,7 +69,7 @@ export function AgentPanel({ onApplyCode, currentCode = '', projectId, branchId,
         active_file_name: openFile?.name,
         active_file_content: currentCode,
         api_key: apiKey || undefined,
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         base_url: 'https://api.groq.com/openai/v1'
       });
 

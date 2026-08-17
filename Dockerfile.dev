@@ -1,0 +1,22 @@
+# ── Dockerfile for Local Development with Hot-Reloading ───────────────────────
+FROM python:3.11-slim
+
+# Install Node.js 20 and build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gnupg \
+    build-essential \
+    libpq-dev \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python backend dependencies
+COPY backend/requirements.txt ./backend/
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# We rely on volume mounts for the actual code and node_modules
+# The startup command will install node modules if missing, then start dev
+CMD ["sh", "-c", "npm install && cd frontend && npm install && cd .. && npm run dev"]

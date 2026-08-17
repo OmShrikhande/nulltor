@@ -10,6 +10,7 @@ import { useAuthStore } from '../store/authStore';
 import { useDirectoryTree } from '../hooks/useDirectoryTree';
 import { directoriesApi, type DirectoryNode } from '../api/directories';
 import { useYjsDoc } from '../hooks/useYjsDoc';
+import { useWebRTC } from '../hooks/useWebRTC';
 import { useCrypto } from '../hooks/useCrypto';
 import { FileTree } from '../components/ide/FileTree';
 import { EditorPane } from '../components/ide/EditorPane';
@@ -53,6 +54,38 @@ const FLOATING_WORDS = [
   { text: 'Passphrase Vault', left: '6%', delay: '-7.8s' },
   { text: 'Nulltor IDE', left: '48%', delay: '-1.8s' },
 ];
+
+function VideoPlayer({ stream, muted = false, autoPlay = true, controls = false, style }: { stream: MediaStream | null, muted?: boolean, autoPlay?: boolean, controls?: boolean, style?: React.CSSProperties }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      if (autoPlay) {
+        videoRef.current.play().catch(e => console.log("Autoplay prevented:", e));
+      }
+    }
+  }, [stream, autoPlay]);
+
+  if (!stream) return null;
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay={autoPlay}
+      muted={muted}
+      controls={controls}
+      playsInline
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        borderRadius: '4px',
+        ...style
+      }}
+    />
+  );
+}
 
 function PassphraseModal({
   onSubmit,
@@ -223,7 +256,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
   const { encrypt, decrypt } = useCrypto(passphrase, SALT);
 
-  const { doc, text, isConnected, peers, cursors, emitCursor } = useYjsDoc({
+  const { doc, text, isConnected, peers, cursors, emitCursor, socket } = useYjsDoc({
     fileId: openFile?.id ?? '__none__',
     branchId: currentBranch?.id ?? 'main',
     encrypt,
@@ -231,6 +264,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     username: user?.username ?? 'Anonymous',
     color: '#01EFAC',
   });
+
+  const { localStream, remoteStreams, isMuted, isVideoActive, startCall, toggleMute, leaveCall } = useWebRTC(
+    socket, 
+    `${openFile?.id ?? '__none__'}::${currentBranch?.id || 'main'}`
+  );
 
   const { tree, loading: treeLoading, refresh: refreshTree } = useDirectoryTree(
     projectId ?? null,
@@ -963,7 +1001,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             </div>
 
             {/* Active Members List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, minHeight: 0, marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', overflowY: 'auto', paddingRight: '4px' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
                 <Users size={14} /> Active Collaborators ({peers.length + 1})
               </div>
@@ -990,25 +1028,63 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
                 </div>
               ))}
 
-              {/* Google Meet Style Video Window */}
-              <div style={{ marginTop: '12px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <div style={{ height: '110px', background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '22px', marginBottom: '2px' }}><Video size={14} /></div>
-                    <div style={{ fontSize: '11px', fontWeight: 600 }}>Live E2EE Video Call</div>
+              {/* WebRTC Video Window */}
+              <div style={{ flexShrink: 0, marginTop: '12px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+                {!isVideoActive ? (
+                  <div 
+                    onClick={startCall}
+                    style={{ height: '110px', background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', cursor: 'pointer', transition: 'background 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-3)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+                  >
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '22px', marginBottom: '4px', color: 'var(--aurora-mint)' }}><Video size={18} /></div>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>Join Live Video Call</div>
+                      <div style={{ fontSize: '10px', marginTop: '4px', opacity: 0.7 }}>E2EE Peer-to-Peer Mesh</div>
+                    </div>
                   </div>
-                </div>
-                <div style={{ padding: '8px 12px', background: 'var(--bg-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                ) : (
+                  <div style={{ padding: '4px', display: 'grid', gridTemplateColumns: remoteStreams.length > 0 ? '1fr 1fr' : '1fr', gap: '4px', background: '#000', maxHeight: '300px', overflowY: 'auto' }}>
+                    <div style={{ position: 'relative', aspectRatio: '4/3' }}>
+                      <VideoPlayer stream={localStream} muted autoPlay style={{ border: isMuted ? '2px solid #ef4444' : '2px solid var(--aurora-mint)' }} />
+                      <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 4, fontSize: '10px', color: '#fff' }}>
+                        You {isMuted && '(Muted)'}
+                      </div>
+                    </div>
+                    {remoteStreams.map(rs => (
+                      <div key={rs.peerId} style={{ position: 'relative', aspectRatio: '4/3' }}>
+                        <VideoPlayer stream={rs.stream} autoPlay controls style={{ border: '1px solid #333' }} />
+                        <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 4, fontSize: '10px', color: '#fff' }}>
+                          Peer
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ padding: '8px 12px', background: 'var(--bg-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', borderTop: '1px solid var(--border)' }}>
                   <span style={{ fontWeight: 600 }}>{user?.username}'s Room</span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button className="btn btn-ghost btn-sm" style={{ padding: '2px 6px' }}><Mic size={14} /> Mute</button>
-                    <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px' }}>Leave</button>
-                  </div>
+                  {isVideoActive && (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', color: isMuted ? '#ef4444' : 'inherit' }} onClick={toggleMute}>
+                        <Mic size={14} /> {isMuted ? 'Unmute' : 'Mute'}
+                      </button>
+                      <button className="btn btn-danger btn-sm" style={{ padding: '2px 8px' }} onClick={leaveCall}>
+                        Leave
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <button className="btn btn-primary btn-full" onClick={() => toast('Room session invite link copied', 'success')}>
+            <button className="btn btn-primary btn-full" onClick={() => {
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(window.location.href);
+                toast('Room session invite link copied to clipboard', 'success');
+              } else {
+                toast('Clipboard API not available. Copy the URL from your browser.', 'error');
+              }
+            }}>
               + Invite Peer to Subroom
             </button>
           </div>

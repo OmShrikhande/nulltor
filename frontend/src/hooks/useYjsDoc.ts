@@ -43,6 +43,7 @@ interface UseYjsDocResult {
   peers: Peer[];
   cursors: RemoteCursor[];
   emitCursor: (line: number, column: number) => void;
+  socket: Socket | null;
 }
 
 export function useYjsDoc({
@@ -184,5 +185,6 @@ export function useYjsDoc({
     peers,
     cursors,
     emitCursor,
+    socket: socketRef.current,
   };
 }

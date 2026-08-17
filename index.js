@@ -297,6 +297,12 @@ io.on("connection", (socket) => {
         peerInfo.set(socket.id, info);
         
         broadcastPresence(info.fileId);
+        
+        // Notify others so they can initiate WebRTC
+        socket.to(info.fileId).emit("peer-joined", {
+            id: socket.id,
+            name: info.name
+        });
     });
 
     socket.on("y-delta", (payload) => {
@@ -370,6 +376,28 @@ io.on("connection", (socket) => {
             column: Math.max(1, Math.floor(column)),
         });
     });
+
+    // ── WebRTC Signaling ──────────────────────────────────────────────────────
+    socket.on("webrtc-join-call", () => {
+        const info = peerInfo.get(socket.id);
+        if (!info) return;
+        socket.to(info.fileId).emit("webrtc-join-call", {
+            senderId: socket.id
+        });
+    });
+
+    socket.on("webrtc-signal", ({ targetId, signal }) => {
+        const info = peerInfo.get(socket.id);
+        if (!info) return;
+        if (!targetId || !signal) return;
+        
+        // Forward the signal to the target peer securely
+        io.to(targetId).emit("webrtc-signal", {
+            senderId: socket.id,
+            signal
+        });
+    });
+
 
 
     socket.on("disconnect", () => {

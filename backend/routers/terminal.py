@@ -21,6 +21,8 @@ if platform.system() == "Windows":
 router = APIRouter()
 
 def _check_docker_available() -> bool:
+    if os.getenv("USE_DOCKER_SANDBOX", "false").lower() != "true":
+        return False
     docker_bin = shutil.which("docker") or shutil.which("docker.exe")
     if not docker_bin:
         return False

@@ -25,10 +25,11 @@ graph TD
 
 ## 2. Core Functional Modules & Capabilities
 
-### 2.1 Real-Time Collaborative IDE
+### 2.1 Real-Time Collaborative IDE & Comms
 * **Monaco Editor Engine**: Full-featured code editing powered by the Monaco Editor engine (the core of VS Code) with syntax highlighting for JavaScript, TypeScript, Python, HTML, CSS, Rust, Go, SQL, C/C++, and Markdown.
 * **CRDT Document Synchronization (Yjs)**: Conflict-free Replicated Data Type (CRDT) engine ensuring zero-conflict, sub-millisecond concurrent multi-cursor editing across LAN peers.
 * **Live Remote Cursor & Presence Tracking**: Real-time visualization of active collaborators, user color badges, line/column tracking, and peer presence broadcasts.
+* **Integrated WebRTC Video/Audio Calling**: Built-in peer-to-peer encrypted mesh video chat for instant team communication without external tools. Uses native `RTCPeerConnection` for 100% data sovereignty (no external media servers like Twilio or Jitsi).
 
 ### 2.2 Local Version Control & Branch Governance
 * **Multi-Branch Hierarchy**:
@@ -79,7 +80,7 @@ Nulltor implements a hybrid **4-Layer Conflict Resolution Architecture**:
    * The developer can test, resolve differences in their live Monaco editor, and submit a clean, conflict-free PR into `main`.
 
 ### 2.4 Autonomous AI Software Engineering Agent
-* **ReAct Agentic Loop**: Multi-turn reasoning and tool execution loop powered by Groq's high-speed inference engine (`llama-3.3-70b-versatile`).
+* **ReAct Agentic Loop**: Multi-turn reasoning and tool execution loop powered by high-speed inference engines (e.g., `openai/gpt-oss-120b` via OpenAI-compatible endpoints or Groq).
 * **Direct Workspace Tooling**:
   * `create_file`: Autonomously registers new database file nodes, updates directory trees, opens dedicated editor tabs, and injects code.
   * `write_code_to_file`: Directly modifies workspace files and propagates updates into Monaco and Yjs without requiring manual copy-pasting.
@@ -120,6 +121,7 @@ Nulltor implements a hybrid **4-Layer Conflict Resolution Architecture**:
 | **@xterm/addon-fit** | `^0.8.0` | Dynamically resizes xterm.js dimensions to fit container dimensions and PTY columns/rows. |
 | **diff-match-patch** | `^1.0.5` | Computes character and line-level diffs for the visual side-by-side Merge Request Diff Viewer. |
 | **react-router-dom** | `^7.2.0` | Client-side routing for Dashboard, IDE, User Governance, Audit Logs, and Profile views. |
+| **Native WebRTC** | `ES6` | `RTCPeerConnection` and `getUserMedia` for peer-to-peer, E2EE mesh video/audio communication without central media servers. |
 
 ---
 
@@ -203,6 +205,8 @@ Nulltor adheres to the **Zero-Trust Storage Model**:
 * **Linux / Mac**: Execute `./start.sh` or `npm start`.
 * Automatic dependency installation, frontend build, dual-service launch on port `3330`, and browser opening.
 
-### 6.2 Containerized Deployment (Single Command)
-* **Command**: `docker compose up --build`
-* Spins up `nulltor_app` (Unified Frontend + FastAPI + Gateway) and `nulltor_postgres` (Pre-seeded database) inside an isolated bridge network (`nulltor_isolated_network`), exposing only **Port `3330`**.
+### 6.2 Containerized Deployment (Production & Development)
+* **Production Command**: `docker compose up --build`
+  Spins up `nulltor_app` (Unified Frontend + FastAPI + Gateway) and `nulltor_postgres` inside an isolated bridge network, exposing only **Port `3330`**.
+* **Global Development Command**: `npm run docker:dev` (runs `docker-compose -f docker-compose.dev.yml up --build`)
+  Provides a universal, OS-agnostic development environment with hot-reloading. Source code is volume-mounted into the containers so local edits instantly reflect without container rebuilds.

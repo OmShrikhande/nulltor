@@ -1,14 +1,13 @@
-
 services:
-  # ── Nulltor Unified Application (Frontend + FastAPI + Gateway) ──────────────
   nulltor-app:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: nulltor_app
+      dockerfile: Dockerfile.dev
+    container_name: nulltor_app_dev
     restart: unless-stopped
     ports:
       - "3330:3330"
+      - "5174:5174"
     environment:
       - PORT=3330
       - BACKEND_PORT=8001
@@ -21,26 +20,32 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - AI_BASE_URL=https://api.groq.com/openai/v1
       - AI_MODEL=openai/gpt-oss-120b
-      - ALLOWED_ORIGINS=http://localhost:3330,http://127.0.0.1:3330,http://localhost:3000,http://127.0.0.1:3000
+      - ALLOWED_ORIGINS=http://localhost:3330,http://127.0.0.1:3330,http://localhost:5174,http://127.0.0.1:5174
+    volumes:
+      # Mount the whole project for hot reloading
+      - .:/app
+      # Prevent host node_modules from conflicting with container's linux binaries
+      - /app/node_modules
+      - /app/frontend/node_modules
+      - nulltor_storage:/app/backend/storage
     depends_on:
       nulltor-db:
         condition: service_healthy
-    volumes:
-      - nulltor_storage:/app/backend/storage
     networks:
       - nulltor_net
 
-  # ── Dedicated PostgreSQL Database for Nulltor ────────────────────────────────
   nulltor-db:
     image: postgres:15-alpine
-    container_name: nulltor_postgres
+    container_name: nulltor_postgres_dev
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=nulltor
+    ports:
+      - "5432:5432"
     volumes:
-      - nulltor_pgdata:/var/lib/postgresql/data
+      - nulltor_pgdata_dev:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d nulltor"]
@@ -52,11 +57,11 @@ services:
 
 networks:
   nulltor_net:
-    name: nulltor_isolated_network
+    name: nulltor_dev_network
     driver: bridge
 
 volumes:
-  nulltor_pgdata:
-    name: nulltor_pgdata
+  nulltor_pgdata_dev:
+    name: nulltor_pgdata_dev
   nulltor_storage:
-    name: nulltor_storage
+    name: nulltor_storage_dev
