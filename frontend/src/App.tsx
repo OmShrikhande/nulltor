@@ -26,6 +26,7 @@ export function App() {
 
   return (
     <ThemeProvider>
+      <div className="global-bg-wrapper" />
       <HashRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

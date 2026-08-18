@@ -2,8 +2,8 @@ import os
 import json
 import urllib.request
 import urllib.error
-from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional, List, Dict, Any, Tuple
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text

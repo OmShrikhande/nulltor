@@ -61,7 +61,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             className="floating-word"
             style={{ left: item.left, animationDelay: item.delay }}
           >
-            {item.text}
+            &lt;/&gt; {item.text}
           </div>
         ))}
       </div>

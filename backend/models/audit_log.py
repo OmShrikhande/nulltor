@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum, Uuid, JSON
+from sqlalchemy import DateTime, ForeignKey, Enum as SAEnum, Uuid, JSON
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column
 

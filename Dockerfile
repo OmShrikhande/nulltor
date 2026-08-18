@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Install Node gateway dependencies
 COPY package*.json ./
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN npm install --omit=dev
 
 # Copy backend code
@@ -36,7 +37,6 @@ COPY backend/ ./backend/
 
 # Copy root gateway, startup scripts, and files
 COPY index.js run_backend.js schema.sql ./
-COPY public/ ./public/
 
 # Copy built React UI from builder stage
 COPY --from=frontend-builder /app/public_react ./public_react

@@ -97,6 +97,11 @@ async def create_node(
     project, membership = await _get_project_and_access(db, project_id, user)
 
     from models.branch import Branch, BranchType, BranchMember
+    
+    # Members cannot create if they are plain members (only lead+ can create)
+    if user.role == UserRole.member and membership and membership.role == MembershipRole.member:
+        # Actually members CAN create files — the spec says members can work on the project
+        pass  # Allow — adjust here if you want lead-only file creation
 
     # Resolve branch
     if not branch_id:
@@ -106,9 +111,16 @@ async def create_node(
         branch_id = main_branch.id
         branch = main_branch
     else:
-        branch = (await db.execute(select(Branch).where(Branch.id == branch_id, Branch.project_id == project_id))).scalar_one_or_none()
+        branch = (await db.execute(select(Branch).where(
+            Branch.id == branch_id,
+            Branch.project_id == project_id,
+            Branch.is_active == True
+        ))).scalar_one_or_none()
         if not branch:
-            raise HTTPException(status_code=404, detail="Branch not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Branch not found or inactive (branch_id={branch_id}, project_id={project_id})"
+            )
 
     # Check branch write permissions
     if user.role != UserRole.superadmin and user.role != UserRole.admin:
@@ -121,8 +133,10 @@ async def create_node(
             if branch.created_by != user.id:
                 raise HTTPException(status_code=403, detail="You cannot edit someone else's private branch")
         elif branch.type == BranchType.subroom:
-            # Must be lead, or explicitly invited
-            if not membership or membership.role != MembershipRole.lead:
+            # Must be creator, lead, or explicitly invited
+            if branch.created_by == user.id:
+                pass
+            elif not membership or membership.role != MembershipRole.lead:
                 bm = (await db.execute(select(BranchMember).where(BranchMember.branch_id == branch.id, BranchMember.user_id == user.id))).scalar_one_or_none()
                 if not bm:
                     raise HTTPException(status_code=403, detail="You are not a member of this subroom")

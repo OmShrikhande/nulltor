@@ -1,14 +1,13 @@
 from typing import Optional, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
 from core.database import get_db
 from core.deps import get_current_user, get_client_ip
-from models.user import User, UserRole
-from models.project import Project
+from models.user import User
 from models.directory import Directory, NodeType
 from models.branch import Branch
 from models.audit_log import AuditAction, ResourceType

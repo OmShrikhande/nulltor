@@ -2,7 +2,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from core.database import get_db, engine
 from core.deps import get_current_user, get_client_ip
@@ -75,7 +75,6 @@ async def _can_review_merge(
     elif target_branch.type == BranchType.private:
         return target_branch.created_by == user.id
     elif target_branch.type == BranchType.subroom:
-        from models.branch import BranchMember
         bm = await db.execute(
             select(BranchMember).where(
                 BranchMember.branch_id == target_branch.id,
@@ -98,7 +97,6 @@ async def _resolve_target_file_id(
     from models.directory import Directory
     
     path_names = []
-    curr_id = source_file_id
     try:
         curr_uuid = UUID(source_file_id)
     except Exception:
@@ -147,11 +145,10 @@ async def _ensure_target_file_node(
     Ensures that the entire directory path and file node exist in the target branch.
     If the file or any parent directories are new, creates them in the directories table.
     """
-    from models.directory import Directory, NodeType
+    from models.directory import Directory
     
     # 1. Trace up from source file to get the full path
     path_nodes = []
-    curr_id = source_file_id
     try:
         curr_uuid = UUID(source_file_id)
     except Exception:
@@ -341,7 +338,7 @@ async def create_merge_request(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    membership = await _assert_project_membership(db, project_id, user)
+    await _assert_project_membership(db, project_id, user)
 
     source = await _get_branch(db, payload.source_branch_id, project_id)
     target = await _get_branch(db, payload.target_branch_id, project_id)
