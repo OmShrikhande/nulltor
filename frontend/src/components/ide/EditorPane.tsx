@@ -123,11 +123,14 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
       if (res.code) {
         const yDoc = getDoc ? getDoc() : null;
         if (yDoc) {
-          const yText = yDoc.getText('monaco') || yDoc.getText('content');
-          if (yText && yText.length > 0) {
-            yText.delete(0, yText.length);
+          // Always write to Yjs regardless of current length — this persists
+          // the snapshot so code survives a hard refresh.
+          let yText = yDoc.getText('content');
+          if (!yText || yText.length === 0) yText = yDoc.getText('monaco');
+          yDoc.transact(() => {
+            if (yText.length > 0) yText.delete(0, yText.length);
             yText.insert(0, res.code);
-          }
+          }, 'local');
         }
         onChange(res.code);
         toast(`✦ AI generated code applied to ${openFile.name}`, 'success');

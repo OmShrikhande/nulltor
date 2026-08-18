@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 import uuid
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from core.database import get_db
 from core.deps import get_current_user
 from models.user import User
 from models.directory import Directory, NodeType
+from routers.tools import _resolve_parent_id
 
 router = APIRouter()
 
@@ -319,7 +320,7 @@ async def run_agent(
     code_modifications: Dict[str, str] = {}
     new_files: List[str] = []
 
-    async def _ensure_db_file_exists(filename: str) -> bool:
+    async def _ensure_db_file_exists(filename: str, content: str = "") -> bool:
         if not pid:
             return False
         try:
@@ -330,22 +331,46 @@ async def run_agent(
                 if main_b:
                     actual_bid = main_b
 
-            q = select(Directory).where(Directory.project_id == pid, Directory.name == filename)
+            base_name, parent_id = await _resolve_parent_id(db, pid, actual_bid, filename)
+
+            q = select(Directory).where(Directory.project_id == pid, Directory.name == base_name, Directory.parent_id == parent_id)
             if actual_bid:
                 q = q.where(Directory.branch_id == actual_bid)
             existing = (await db.execute(q)).scalar_one_or_none()
+            
+            node_id = None
+            is_new = False
             if not existing:
                 new_node = Directory(
                     project_id=pid,
-                    name=filename,
+                    name=base_name,
+                    parent_id=parent_id,
                     type=NodeType.file,
                     branch_id=actual_bid,
                     created_by=user.id,
                     updated_by=user.id
                 )
                 db.add(new_node)
-                await db.commit()
-                return True
+                await db.flush()
+                node_id = new_node.id
+                is_new = True
+            else:
+                node_id = existing.id
+
+            if content:
+                stmt = text("""
+                    INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                    VALUES (:file_id, :branch_id, :data, CURRENT_TIMESTAMP)
+                    ON CONFLICT(file_id, branch_id) DO UPDATE
+                    SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+                """)
+                await db.execute(stmt, {
+                    "file_id": str(node_id),
+                    "branch_id": str(actual_bid),
+                    "data": content
+                })
+            await db.commit()
+            return is_new
         except Exception as e:
             print("DB node creation error:", e)
         return False
@@ -384,7 +409,7 @@ async def run_agent(
                                     break
                             
                             code_modifications[target_f] = extracted.strip()
-                            is_new = await _ensure_db_file_exists(target_f)
+                            is_new = await _ensure_db_file_exists(target_f, extracted.strip())
                             if is_new or target_f not in project_files:
                                 new_files.append(target_f)
 
@@ -416,7 +441,7 @@ async def run_agent(
                         new_code = args.get("code_content", "")
                         code_modifications[target_file] = new_code
                         
-                        is_new = await _ensure_db_file_exists(target_file)
+                        is_new = await _ensure_db_file_exists(target_file, new_code)
                         if is_new or fn_name == "create_file" or target_file not in project_files:
                             if target_file not in new_files:
                                 new_files.append(target_file)

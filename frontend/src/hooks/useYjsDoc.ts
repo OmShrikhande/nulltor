@@ -91,11 +91,26 @@ export function useYjsDoc({
     socket.on('approved', ({ snapshot }: { snapshot: string | null }) => {
       if (snapshot) {
         try {
-          const decrypted = decrypt(snapshot);
-          const update = Uint8Array.from(atob(decrypted), (c) => c.charCodeAt(0));
-          Y.applyUpdate(newDoc, update);
+          let isPlaintext = false;
+          let updateStr = "";
+          try {
+            updateStr = decrypt(snapshot);
+          } catch (err) {
+            isPlaintext = true;
+            updateStr = snapshot;
+          }
+          if (isPlaintext) {
+            const ytext = newDoc.getText('content');
+            newDoc.transact(() => {
+              ytext.delete(0, ytext.length);
+              ytext.insert(0, updateStr);
+            }, 'local');
+          } else {
+            const update = Uint8Array.from(atob(updateStr), (c) => c.charCodeAt(0));
+            Y.applyUpdate(newDoc, update);
+          }
         } catch (_) {
-          // Snapshot may be empty or from a different key — ignore
+          // ignore
         }
       }
       socket.emit('register-peer', { name: username, color });
@@ -113,9 +128,24 @@ export function useYjsDoc({
     // Sync response (full snapshot from another peer)
     socket.on('sync-response', ({ snapshot }: { snapshot: string }) => {
       try {
-        const decrypted = decrypt(snapshot);
-        const update = Uint8Array.from(atob(decrypted), (c) => c.charCodeAt(0));
-        Y.applyUpdate(newDoc, update);
+        let isPlaintext = false;
+        let updateStr = "";
+        try {
+          updateStr = decrypt(snapshot);
+        } catch (err) {
+          isPlaintext = true;
+          updateStr = snapshot;
+        }
+        if (isPlaintext) {
+          const ytext = newDoc.getText('content');
+          newDoc.transact(() => {
+            ytext.delete(0, ytext.length);
+            ytext.insert(0, updateStr);
+          }, 'local');
+        } else {
+          const update = Uint8Array.from(atob(updateStr), (c) => c.charCodeAt(0));
+          Y.applyUpdate(newDoc, update);
+        }
       } catch (_) {}
     });
 

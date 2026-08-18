@@ -282,11 +282,13 @@ async def create_branch(
                     for cp in copy_params:
                         await db.execute(
                             text("""
-                                INSERT OR REPLACE INTO file_snapshots (file_id, branch_id, data, updated_at)
+                                INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
                                 SELECT :new_id, :new_branch, data, CURRENT_TIMESTAMP
                                 FROM file_snapshots
                                 WHERE file_id = :old_id AND (branch_id = :old_branch OR branch_id = 'main')
                                 ORDER BY updated_at DESC LIMIT 1
+                                ON CONFLICT (file_id, branch_id) DO UPDATE
+                                SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
                             """),
                             cp
                         )

@@ -486,11 +486,18 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         const savedPrivateBranchId = sessionStorage.getItem(`privatebranch-${projectId}`);
         if (savedPrivateBranchId) {
           const pb = bl.items.find(b => b.id === savedPrivateBranchId);
-          if (pb) defaultBranch = pb;
-          setSessionPrivateBranch(savedPrivateBranchId);
+          if (pb) {
+            defaultBranch = pb;
+            setSessionPrivateBranch(savedPrivateBranchId);
+          } else {
+            sessionStorage.removeItem(`privatebranch-${projectId}`);
+            setSessionPrivateBranch(null);
+          }
+        } else {
+          setSessionPrivateBranch(null);
         }
 
-        if (defaultBranch && !currentBranch) setBranch(defaultBranch);
+        if (defaultBranch) setBranch(defaultBranch);
       } catch {
         toast('Failed to load project room', 'error');
         navigate('/dashboard');
@@ -534,8 +541,39 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   async function handleApplyAgentCode(fileName: string, code: string) {
     if (!projectId) return;
 
+    const findNodeByPath = (nodes: DirectoryNode[], pathParts: string[]): DirectoryNode | null => {
+      if (pathParts.length === 0) return null;
+      const [currentPart, ...restParts] = pathParts;
+      for (const n of nodes) {
+        if (n.name === currentPart) {
+          if (restParts.length === 0 && n.type === 'file') return n;
+          if (restParts.length > 0 && n.type === 'dir' && n.children) {
+            const found = findNodeByPath(n.children, restParts);
+            if (found) return found;
+          }
+        }
+      }
+      return null;
+    };
+
+    let updatedTree = await refreshTree();
+    const pathParts = fileName.replace(/\\/g, '/').split('/').filter(Boolean);
+    let targetNode = findNodeByPath(updatedTree || tree, pathParts);
+
+    if (!targetNode) {
+      try {
+        await (window as any).nulltorTools.writeFile(fileName, code);
+        updatedTree = await refreshTree();
+        targetNode = findNodeByPath(updatedTree || tree, pathParts);
+      } catch (err) {
+        console.error("Failed to auto-create file:", err);
+      }
+    }
+
+    if (!targetNode) return;
+
     // 1. If the target file is already open, directly update its buffer
-    if (openFile && openFile.name === fileName) {
+    if (openFile && openFile.id === targetNode.id) {
       if (text && doc) {
         doc.transact(() => {
           text.delete(0, text.length);
@@ -543,35 +581,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         }, 'local');
       }
       setEditorValue(code);
-      toast(`Updated ${fileName}`, 'success');
+      toast(`✦ AI updated ${fileName}`, 'success');
       return;
-    }
-
-    // 2. Otherwise find or create the target file in the tree
-    const findNode = (nodes: DirectoryNode[]): DirectoryNode | null => {
-      for (const n of nodes) {
-        if (n.name === fileName && n.type === 'file') return n;
-        if (n.children && n.children.length > 0) {
-          const res = findNode(n.children);
-          if (res) return res;
-        }
-      }
-      return null;
-    };
-
-    let updatedTree = await refreshTree();
-    let targetNode = findNode(updatedTree || tree);
-
-    if (!targetNode) {
-      try {
-        targetNode = await directoriesApi.create(projectId, {
-          name: fileName,
-          type: 'file'
-        }, currentBranch?.id);
-        await refreshTree();
-      } catch (err) {
-        console.error("Failed to auto-create file:", err);
-      }
     }
 
     if (targetNode) {
@@ -1095,6 +1106,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               branchId={currentBranch?.id}
               currentCode={editorValue}
               onApplyCode={handleApplyAgentCode}
+              onRefreshTree={refreshTree}
               onClose={() => setShowAgentPanel(false)}
             />
           </div>

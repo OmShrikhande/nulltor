@@ -7,13 +7,14 @@ import { Bot, User, Send, Terminal, CheckCircle2, RotateCcw, Settings2, FileCode
 
 interface AgentPanelProps {
   onApplyCode?: (fileName: string, code: string) => Promise<void> | void;
+  onRefreshTree?: () => void;
   currentCode?: string;
   projectId?: string;
   branchId?: string;
   onClose?: () => void;
 }
 
-export function AgentPanel({ onApplyCode, currentCode = '', projectId, branchId, onClose }: AgentPanelProps) {
+export function AgentPanel({ onApplyCode, onRefreshTree, currentCode = '', projectId, branchId, onClose }: AgentPanelProps) {
   const openFile = useEditorStore((s) => s.openFile);
   const { currentProject, currentBranch } = useProjectStore();
 
@@ -79,6 +80,8 @@ export function AgentPanel({ onApplyCode, currentCode = '', projectId, branchId,
       // If tools were executed, record them
       if (res.executed_tools && res.executed_tools.length > 0) {
         setToolLogs(prev => [...prev, ...res.executed_tools]);
+        // Auto-refresh the file explorer tree after any file operation
+        if (onRefreshTree) onRefreshTree();
       }
 
       // Automatically apply code modifications into the editor

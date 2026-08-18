@@ -31,6 +31,7 @@ export function useCrypto(passphrase: string, salt: string) {
     if (!ivHex || !data) throw new Error('Invalid ciphertext format');
     const iv = CryptoJS.enc.Hex.parse(ivHex);
     const decrypted = CryptoJS.AES.decrypt(data, key, { iv });
+    if (decrypted.sigBytes < 0) throw new Error('Decryption failed');
     return decrypted.toString(CryptoJS.enc.Utf8);
   }
 
