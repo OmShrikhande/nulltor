@@ -9,6 +9,8 @@ export interface ProjectRead {
   status?: ProjectStatus | string;
   owner_id: string;
   room_salt: string | null;
+  invite_code: string | null;
+  invite_role: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -32,4 +34,10 @@ export const projectsApi = {
     patch<ProjectRead>(`/projects/${id}`, data),
 
   delete: (id: string) => del(`/projects/${id}`),
+
+  joinByCode: (code: string) =>
+    post<ProjectRead>(`/projects/join/${code.toUpperCase().trim()}`, {}),
+
+  regenerateCode: (id: string, invite_role?: string) =>
+    post<ProjectRead>(`/projects/${id}/regenerate-code`, { invite_role }),
 };

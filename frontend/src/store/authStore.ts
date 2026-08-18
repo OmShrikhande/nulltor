@@ -10,12 +10,17 @@ interface AuthState {
   hydrate: () => void;
 }
 
+const initialToken = localStorage.getItem('nulltor_token');
+const initialUserStr = localStorage.getItem('nulltor_user');
+const initialUser = initialUserStr ? (JSON.parse(initialUserStr) as UserRead) : null;
+
 export const useAuthStore = create<AuthState>((set) => ({
-  token: null,
-  user: null,
-  isAuthenticated: false,
+  token: initialToken,
+  user: initialUser,
+  isAuthenticated: !!(initialToken && initialUser),
 
   hydrate: () => {
+    // Left for backwards compatibility, but initial state is now loaded synchronously above.
     const token = localStorage.getItem('nulltor_token');
     const userStr = localStorage.getItem('nulltor_user');
     const user = userStr ? (JSON.parse(userStr) as UserRead) : null;

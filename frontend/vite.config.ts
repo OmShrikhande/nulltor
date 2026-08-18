@@ -12,6 +12,12 @@ export default defineConfig({
         target: 'http://localhost:8001',
         changeOrigin: true,
       },
+      // Terminal WebSocket proxy
+      '/ws': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+        ws: true,
+      },
       // Socket.IO server (Yjs real-time collaborative editing)
       '/socket.io': {
         target: 'http://localhost:3000',

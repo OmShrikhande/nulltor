@@ -1,19 +1,16 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
-/* ─── Northern Lights / Aurora Borealis Color Palette ────────────────────── */
+/* ─── Professional Sapphire Blue Color Palette ────────────────────── */
 :root {
-  --aurora-mint:   #01EFAC; /* Neon Aurora Mint */
-  --aurora-teal:   #01CBAE; /* Deep Turquoise Teal */
-  --aurora-blue:   #2082A6; /* Ocean Steel Blue */
-  --aurora-purple: #524094; /* Royal Aurora Purple */
-  --aurora-violet: #562A83; /* Deep Cosmic Violet */
+  --accent-primary:   #2563eb; /* Sapphire Blue Primary */
+  --accent-secondary: #3b82f6; /* Sapphire Blue Light */
+  --accent-tertiary:  #1d4ed8; /* Sapphire Blue Dark */
 
-  /* Legacy Soft Palette Aliases mapped to Aurora Theme */
-  --palette-mint:      #01EFAC;
-  --palette-sky:       #01CBAE;
-  --palette-peach:     #2082A6;
-  --palette-rose:      #524094;
-  --palette-pink:      #562A83;
+  --sapphire:         #2563eb;
+  --sapphire-light:   #3b82f6;
+  --sapphire-dark:    #1d4ed8;
+  --sapphire-dim:     rgba(37, 99, 235, 0.14);
+  --sapphire-border:  rgba(37, 99, 235, 0.35);
 
   /* Fonts */
   --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -22,39 +19,21 @@
   /* Layout Dimensions */
   --sidebar-w:   250px;
   --agent-w:     330px;
-  --topbar-h:    52px;
-  --statusbar-h: 28px;
+  --topbar-h:    48px;
+  --statusbar-h: 24px;
 
   /* Radii */
   --radius-xs:   4px;
   --radius-sm:   6px;
-  --radius:      10px;
-  --radius-lg:   14px;
-  --radius-xl:   20px;
+  --radius:      8px;
+  --radius-lg:   10px;
+  --radius-xl:   12px;
   --radius-full: 9999px;
 
   --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition:      200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-<<<<<<< Updated upstream
-/* ─── Dark Mode (Default Enterprise Theme) ────────────────────────────────── */
-[data-theme="dark"], :root:not([data-theme="light"]) {
-  color-scheme: dark;
-
-  --bg-0:        #080b11;
-  --bg-1:        #0f172a;
-  --bg-2:        #1e293b;
-  --bg-3:        #334155;
-  --bg-4:        #475569;
-
-  --panel-bg:    rgba(15, 23, 42, 0.85);
-  --glass-bg:    rgba(30, 41, 59, 0.65);
-  --glass-border: rgba(255, 255, 255, 0.08);
-
-  --border:      #1e293b;
-  --border-hi:   #334155;
-=======
 /* ─── Dark Mode (Dark Midnight Developer Studio) ─────────────── */
 [data-theme="dark"], :root:not([data-theme="light"]) {
   color-scheme: dark;
@@ -74,7 +53,6 @@
   --panel-bg:        #1f1f1f;
   --glass-bg:        #1f1f1f;
   --glass-border:    #2a2a2a;
->>>>>>> Stashed changes
 
   --border:          #2a2a2a;
   --border-hi:       #3d3d3d;
@@ -83,13 +61,6 @@
   --text-secondary: #a3a3a3;
   --text-muted:     #737373;
 
-<<<<<<< Updated upstream
-  --accent:      #01CBAE; /* Aurora Teal Accent */
-  --accent-hi:   #01EFAC; /* Aurora Mint Highlight */
-  --accent-glow: rgba(1, 239, 172, 0.25);
-
-  --success:     #01EFAC;
-=======
   --accent:      #2563eb;
   --accent-hi:   #3b82f6;
   --accent-glow: transparent;
@@ -100,36 +71,18 @@
   --aurora-violet: #6366f1;
 
   --success:     #10b981;
->>>>>>> Stashed changes
   --warning:     #f59e0b;
-  --danger:      #f43f5e;
+  --danger:      #ef4444;
 
   /* Branch Theme Accents */
-<<<<<<< Updated upstream
-  --branch-main-bg:   rgba(1, 239, 172, 0.15);
-  --branch-main-text: #01EFAC;
-  --branch-main-border: rgba(1, 239, 172, 0.3);
-
-  --branch-sub-bg:    rgba(32, 130, 166, 0.18);
-=======
   --branch-main-bg:   #242424;
   --branch-main-text: #60a5fa;
   --branch-main-border: #3b82f6;
 
   --branch-sub-bg:    #242424;
->>>>>>> Stashed changes
   --branch-sub-text:  #38bdf8;
   --branch-sub-border: #0284c7;
 
-<<<<<<< Updated upstream
-  --branch-priv-bg:   rgba(86, 42, 131, 0.25);
-  --branch-priv-text: #c084fc;
-  --branch-priv-border: rgba(192, 132, 252, 0.4);
-
-  --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow:      0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg:   0 12px 36px rgba(0, 0, 0, 0.65);
-=======
   --branch-priv-bg:   #242424;
   --branch-priv-text: #a5b4fc;
   --branch-priv-border: #6366f1;
@@ -146,39 +99,12 @@
   --typing-bg:    rgba(234, 88, 12, 0.15);
   --typing-border: rgba(249, 115, 22, 0.4);
   --typing-text:  #fb923c;
->>>>>>> Stashed changes
 }
 
 /* ─── Light Mode Theme (Dark Royal Blue & Crisp White Combination) ────────── */
 [data-theme="light"] {
   color-scheme: light;
 
-<<<<<<< Updated upstream
-  --bg-0:        #f8fafc;
-  --bg-1:        #ffffff;
-  --bg-2:        #f1f5f9;
-  --bg-3:        #e2e8f0;
-  --bg-4:        #cbd5e1;
-
-  --panel-bg:    rgba(255, 255, 255, 0.95);
-  --glass-bg:    rgba(248, 250, 252, 0.85);
-  --glass-border: rgba(0, 0, 0, 0.08);
-
-  --border:      #e2e8f0;
-  --border-hi:   #cbd5e1;
-
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
-  --text-muted:     #94a3b8;
-
-  --accent:      #01CBAE;
-  --accent-hi:   #01EFAC;
-  --accent-glow: rgba(1, 203, 174, 0.18);
-
-  --success:     #059669;
-  --warning:     #d97706;
-  --danger:      #e11d48;
-=======
   /* Dark Royal Blue & Crisp White Theme Tokens */
   --sidebar-bg:      #0b1e48; /* Deep Dark Royal Navy Blue Sidebar */
   --header-bg:       #0f2b5c; /* Rich Dark Royal Blue Header */
@@ -208,7 +134,6 @@
   --success:     #0f866c;
   --warning:     #d97706;
   --danger:      #dc2626;
->>>>>>> Stashed changes
 
   /* Branch Theme Accents for Light Mode */
   --branch-main-bg:   #eff6ff;
@@ -334,9 +259,8 @@ svg { display: block; flex-shrink: 0; }
 /* ─── Typography & Utilities ──────────────────────────────────────────────── */
 .font-mono { font-family: var(--font-mono); }
 .text-gradient {
-  background: linear-gradient(135deg, var(--aurora-mint) 0%, var(--aurora-teal) 45%, var(--aurora-purple) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--accent-primary);
+  font-weight: bold;
 }
 
 /* ─── Live Collaborative Monaco Cursor Tooltip Tag ───────────────────────── */
@@ -360,11 +284,6 @@ svg { display: block; flex-shrink: 0; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
 }
-<<<<<<< Updated upstream
-@keyframes cursorPulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.04); opacity: 0.85; }
-=======
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -391,7 +310,6 @@ button[data-testid="webchat-launcher"],
   pointer-events: none !important;
   width: 0 !important;
   height: 0 !important;
->>>>>>> Stashed changes
 }
 
 /* ─── IDE Bottom Terminal Panel ───────────────────────────────────────────── */
@@ -438,13 +356,11 @@ button[data-testid="webchat-launcher"],
 .btn:disabled { opacity: 0.5; pointer-events: none; }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--aurora-purple) 0%, var(--aurora-violet) 100%);
+  background: var(--accent-primary);
   color: #ffffff;
-  box-shadow: 0 2px 12px rgba(86, 42, 131, 0.35);
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--aurora-teal) 0%, var(--aurora-purple) 100%);
-  box-shadow: 0 4px 18px rgba(1, 239, 172, 0.3);
+  background: var(--accent-secondary);
 }
 
 .btn-secondary {
@@ -616,7 +532,7 @@ button[data-testid="webchat-launcher"],
   height: 40px;
   border-radius: 50%;
   position: relative;
-  background: linear-gradient(135deg, var(--aurora-mint), var(--aurora-purple));
+  background: var(--accent-primary);
   color: #fff;
   display: flex;
   align-items: center;
@@ -684,7 +600,7 @@ button[data-testid="webchat-launcher"],
   top: 0;
   bottom: 0;
   width: 3px;
-  background: linear-gradient(180deg, var(--aurora-mint), var(--aurora-teal), var(--aurora-purple), var(--aurora-violet));
+  background: var(--border-hi);
   transform: translateX(-50%);
   border-radius: 2px;
 }
@@ -728,14 +644,13 @@ button[data-testid="webchat-launcher"],
   height: 38px;
   border-radius: 50%;
   background: var(--bg-1);
-  border: 3px solid var(--aurora-mint);
+  border: 3px solid var(--accent-primary);
   color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   z-index: 10;
-  box-shadow: 0 0 14px var(--accent-glow);
 }
 
 /* ─── Global Top Navigation Bar (Stitch Nexus IDE) ────────────────────────── */
@@ -801,13 +716,13 @@ body::before {
   display: none !important;
 }
 
-/* ─── Sidebar (ALWAYS Dark Theme) ────────────────────────────────────────── */
+/* ─── Sidebar (Matches Theme) ────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-w);
   height: 100vh;
-  background: #0f172a !important;
-  border-right: 1px solid #1e293b !important;
-  color: #f8fafc !important;
+  background: var(--bg-1) !important;
+  border-right: 1px solid var(--border) !important;
+  color: var(--text-primary) !important;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -832,7 +747,7 @@ body::before {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  border-bottom: 1px solid #1e293b !important;
+  border-bottom: 1px solid var(--border) !important;
 }
 
 .sidebar-nav {
@@ -849,35 +764,35 @@ body::before {
   gap: 12px;
   padding: 9px 12px;
   border-radius: var(--radius-sm);
-  color: #94a3b8 !important;
+  color: var(--text-secondary) !important;
   font-size: 13px;
   font-weight: 500;
   transition: all var(--transition-fast);
 }
 .sidebar-link:hover {
-  background: #1e293b !important;
-  color: #f8fafc !important;
+  background: var(--bg-2) !important;
+  color: var(--text-primary) !important;
 }
 .sidebar-link.active {
-  background: rgba(1, 239, 172, 0.15) !important;
-  color: #01EFAC !important;
+  background: var(--bg-2) !important;
+  color: var(--accent-primary) !important;
   font-weight: 600;
-  border-left: 3px solid #01EFAC !important;
+  border-left: 3px solid var(--accent-primary) !important;
 }
 
 .sidebar-footer {
   padding: 14px;
-  border-top: 1px solid #1e293b !important;
+  border-top: 1px solid var(--border) !important;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .user-badge:hover {
-  background: #1e293b !important;
+  background: var(--bg-2) !important;
 }
-.user-name { font-weight: 600; font-size: 13px; color: #f8fafc !important; }
-.user-role { font-size: 11px; color: #64748b !important; text-transform: uppercase; }
+.user-name { font-weight: 600; font-size: 13px; color: var(--text-primary) !important; }
+.user-role { font-size: 11px; color: var(--text-muted) !important; text-transform: uppercase; }
 
 .user-badge {
   display: flex;
@@ -895,7 +810,7 @@ body::before {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--aurora-mint), var(--aurora-purple));
+  background: var(--aurora-mint);
   color: #0b0e15;
   display: flex;
   align-items: center;
@@ -908,53 +823,9 @@ body::before {
 .user-name { font-weight: 600; font-size: 13px; color: var(--text-primary); }
 .user-role { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
 
-<<<<<<< Updated upstream
-/* ─── Floating Background Word Animation for Login (Aurora Borealis) ───────── */
-.floating-words-bg {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.floating-word {
-  position: absolute;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--aurora-mint);
-  opacity: 0.35;
-  animation: floatWord 8s infinite linear;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.floating-word:nth-child(2n) { color: var(--aurora-teal); animation-duration: 9s; }
-.floating-word:nth-child(3n) { color: var(--aurora-blue); animation-duration: 7s; }
-.floating-word:nth-child(4n) { color: var(--aurora-purple); animation-duration: 10s; }
-.floating-word:nth-child(5n) { color: var(--aurora-violet); animation-duration: 8.5s; }
-
-@keyframes floatWord {
-  0% {
-    transform: translateY(105vh) rotate(-5deg);
-    opacity: 0;
-  }
-  10% {
-    opacity: 0.45;
-  }
-  90% {
-    opacity: 0.45;
-  }
-  100% {
-    transform: translateY(-15vh) rotate(8deg);
-    opacity: 0;
-  }
-=======
 /* ─── Clean Login Backdrop ─────────────────────────────────────────────── */
 .login-glow {
   display: none;
->>>>>>> Stashed changes
 }
 
 /* ─── Compact Folder Project Cards ───────────────────────────────────────── */
@@ -991,8 +862,8 @@ body::before {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--aurora-mint), var(--aurora-teal));
-  color: #0f172a;
+  background: var(--accent-primary);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1065,14 +936,13 @@ body::before {
   width: 80px;
   height: 80px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--aurora-mint), var(--aurora-blue), var(--aurora-violet));
-  color: #0b0e15;
+  background: var(--accent-primary);
+  color: #fff;
   font-size: 32px;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px var(--accent-glow);
 }
 
 .profile-details {
@@ -1136,12 +1006,6 @@ body::before {
   overflow: hidden;
 }
 
-<<<<<<< Updated upstream
-.ide-sidebar-pane {
-  width: 260px;
-  background: var(--bg-1);
-  border-right: 1px solid var(--border);
-=======
 .ide-activity-bar {
   width: 48px;
   background: var(--sidebar-bg, #040711) !important;
@@ -1180,7 +1044,6 @@ body::before {
   width: 260px;
   background: var(--sidebar-pane-bg, #070c1a) !important;
   border-right: 1px solid var(--border) !important;
->>>>>>> Stashed changes
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -1462,15 +1325,7 @@ body::before {
   overflow: hidden;
 }
 
-.login-glow {
-  position: absolute;
-  width: 650px;
-  height: 650px;
-  background: radial-gradient(circle, var(--aurora-mint) 0%, var(--aurora-teal) 30%, var(--aurora-purple) 60%, transparent 80%);
-  opacity: 0.22;
-  filter: blur(100px);
-  pointer-events: none;
-}
+/* Removed login glow */
 
 .login-card {
   width: 100%;
@@ -1488,8 +1343,6 @@ body::before {
 .login-logo { margin-bottom: 20px; display: flex; justify-content: center; }
 .login-title { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
 .login-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
-<<<<<<< Updated upstream
-=======
 
 /* ─── IDE Layout Styles ───────────────────────────────────────────── */
 
@@ -1812,5 +1665,199 @@ select:focus,
   background: #3b4b70;
 }
 
+/* ─── Login Screen & Floating Technical Words Background ────────────────────── */
+.login-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-0);
+  position: relative;
+  overflow: hidden;
+}
 
->>>>>>> Stashed changes
+.login-glow {
+  position: absolute;
+  width: 750px;
+  height: 750px;
+  background: radial-gradient(
+    circle,
+    rgba(37, 99, 235, 0.28) 0%,
+    rgba(56, 189, 248, 0.16) 30%,
+    rgba(99, 102, 241, 0.08) 55%,
+    transparent 75%
+  );
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+[data-theme="light"] .login-glow {
+  background: radial-gradient(
+    circle,
+    rgba(37, 99, 235, 0.18) 0%,
+    rgba(14, 165, 233, 0.12) 32%,
+    rgba(99, 102, 241, 0.06) 55%,
+    transparent 75%
+  );
+  filter: blur(100px);
+}
+
+.floating-words-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  perspective: 1200px;
+}
+
+.floating-word {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  animation: floatWordSmooth 14s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  white-space: nowrap;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
+}
+
+.floating-word-symbol {
+  font-size: 0.82em;
+  font-weight: 700;
+  opacity: 0.65;
+}
+
+/* Palette variations with tuned transparency and glow */
+.floating-word.word-blue {
+  color: #60a5fa;
+  text-shadow: 0 0 16px rgba(96, 165, 250, 0.45);
+}
+
+.floating-word.word-cyan {
+  color: #38bdf8;
+  text-shadow: 0 0 16px rgba(56, 189, 248, 0.45);
+}
+
+.floating-word.word-teal {
+  color: #2dd4bf;
+  text-shadow: 0 0 16px rgba(45, 212, 191, 0.45);
+}
+
+.floating-word.word-mint {
+  color: #34d399;
+  text-shadow: 0 0 16px rgba(52, 211, 153, 0.45);
+}
+
+.floating-word.word-purple {
+  color: #a78bfa;
+  text-shadow: 0 0 16px rgba(167, 139, 250, 0.45);
+}
+
+/* Light Theme Color Harmonization */
+[data-theme="light"] .floating-word.word-blue {
+  color: #1d4ed8;
+  text-shadow: 0 0 8px rgba(29, 78, 216, 0.22);
+}
+[data-theme="light"] .floating-word.word-cyan {
+  color: #0284c7;
+  text-shadow: 0 0 8px rgba(2, 132, 199, 0.22);
+}
+[data-theme="light"] .floating-word.word-teal {
+  color: #0f766e;
+  text-shadow: 0 0 8px rgba(15, 118, 110, 0.22);
+}
+[data-theme="light"] .floating-word.word-mint {
+  color: #059669;
+  text-shadow: 0 0 8px rgba(5, 150, 105, 0.22);
+}
+[data-theme="light"] .floating-word.word-purple {
+  color: #6d28d9;
+  text-shadow: 0 0 8px rgba(109, 40, 217, 0.22);
+}
+
+@keyframes floatWordSmooth {
+  0% {
+    transform: translateY(105vh) translateX(0) rotate(-4deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.38;
+    transform: translateY(85vh) translateX(10px) rotate(-2deg);
+  }
+  50% {
+    opacity: 0.46;
+    transform: translateY(50vh) translateX(-8px) rotate(1deg);
+  }
+  85% {
+    opacity: 0.38;
+    transform: translateY(15vh) translateX(12px) rotate(3deg);
+  }
+  100% {
+    transform: translateY(-12vh) translateX(-6px) rotate(5deg);
+    opacity: 0;
+  }
+}
+
+[data-theme="light"] .floating-word {
+  animation-name: floatWordSmoothLight;
+}
+
+@keyframes floatWordSmoothLight {
+  0% {
+    transform: translateY(105vh) translateX(0) rotate(-4deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.26;
+    transform: translateY(85vh) translateX(10px) rotate(-2deg);
+  }
+  50% {
+    opacity: 0.32;
+    transform: translateY(50vh) translateX(-8px) rotate(1deg);
+  }
+  85% {
+    opacity: 0.26;
+    transform: translateY(15vh) translateX(12px) rotate(3deg);
+  }
+  100% {
+    transform: translateY(-12vh) translateX(-6px) rotate(5deg);
+    opacity: 0;
+  }
+}
+
+.login-card {
+  width: 100%;
+  max-width: 430px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-xl);
+  padding: 38px 36px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 35px rgba(37, 99, 235, 0.18);
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  backdrop-filter: blur(16px);
+  animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] .login-card {
+  background: #ffffff;
+  border-color: #cbdff7;
+  box-shadow: 0 20px 50px rgba(11, 30, 72, 0.12), 0 0 20px rgba(37, 99, 235, 0.08);
+}
+
+.login-logo { margin-bottom: 18px; display: flex; justify-content: center; }
+.login-title { font-size: 23px; font-weight: 800; margin-bottom: 6px; color: var(--text-primary); }
+.login-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
+.login-form { display: flex; flex-direction: column; text-align: left; }
+
+
+

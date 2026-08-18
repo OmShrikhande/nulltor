@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Bot, MessageSquare, PlusCircle, Eye, Edit3, Sparkles, Trash2, CheckCircle2, FileCode, ArrowRight, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bot, MessageSquare, PlusCircle, Eye, Edit3, Sparkles, Trash2, FileCode, ArrowRight } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { useProjectStore } from '../../store/projectStore';
 import { toast } from '../shared/Toast';
@@ -14,7 +14,7 @@ interface BotpressPanelProps {
 export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode }: BotpressPanelProps) {
   const openFile = useEditorStore((s) => s.openFile);
   const { currentBranch } = useProjectStore();
-  const [isReady, setIsReady] = useState(false);
+  const [, setIsReady] = useState(false);
 
   // 1. Mount Global Client Tool Bridge for Botpress
   useEffect(() => {

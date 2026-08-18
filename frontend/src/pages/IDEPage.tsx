@@ -1,84 +1,45 @@
-<<<<<<< Updated upstream
-import { useEffect, useState } from 'react';
-=======
 import { useEffect, useState, useRef, useCallback } from 'react';
->>>>>>> Stashed changes
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectsApi } from '../api/projects';
 import { branchesApi, type BranchRead } from '../api/branches';
+import { mergesApi } from '../api/merges';
+import { commitsApi } from '../api/commits';
 import { useProjectStore } from '../store/projectStore';
 import { useEditorStore } from '../store/editorStore';
 import { useAuthStore } from '../store/authStore';
 import { useDirectoryTree } from '../hooks/useDirectoryTree';
+import { directoriesApi, type DirectoryNode } from '../api/directories';
 import { useYjsDoc } from '../hooks/useYjsDoc';
 import { useCrypto } from '../hooks/useCrypto';
 import { FileTree } from '../components/ide/FileTree';
 import { EditorPane } from '../components/ide/EditorPane';
-import { RunPanel } from '../components/ide/RunPanel';
 import { AgentPanel } from '../components/ide/AgentPanel';
 import { BranchSelector, CreateBranchModal } from '../components/ide/BranchSelector';
+import { MergeRequestModal } from '../components/ide/MergeRequestModal';
+import * as Y from 'yjs';
+import { MergeReviewPanel } from '../components/ide/MergeReviewPanel';
+import { PullSyncModal } from '../components/ide/PullSyncModal';
+import { extractTextFromYjsSnapshot } from '../components/ide/DiffViewerModal';
+import { TimelinePanel } from '../components/ide/TimelinePanel';
 import { StatusBar } from '../components/ide/StatusBar';
-<<<<<<< Updated upstream
-import { NulltorLogo } from '../components/shared/NulltorLogo';
-import { useTheme } from '../context/ThemeContext';
-import { toast } from '../components/shared/Toast';
-=======
 import { ActivityBar, type ActivityTab } from '../components/ide/ActivityBar';
 import { SearchPanel } from '../components/ide/SearchPanel';
 import { ExtensionsPanel } from '../components/ide/ExtensionsPanel';
-import { BotpressPanel } from '../components/ide/BotpressPanel';
 import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from '../components/shared/Toast';
-import { Rocket, GitMerge, Video, Users, Save, Bot, Mic, Lock, GitBranch, ListChecks, RefreshCw, ArrowDownCircle, Play, Folder, X } from 'lucide-react';
->>>>>>> Stashed changes
+import { Rocket, GitMerge, Video, Users, Save, Bot, Mic, Lock, GitBranch, ListChecks, RefreshCw, ArrowDownCircle, Play, Folder } from 'lucide-react';
 
 const SALT = 'nulltor-static-salt-v1';
 
-// ─── Combined Right Panel (Run + AI Agent) ─────────────────────────────────
-function RightPanel({ code, language, runTrigger }: { code: string; language: string; runTrigger: number }) {
-  const [activeTab, setActiveTab] = useState<'run' | 'agent'>('run');
-
-  useEffect(() => {
-    if (runTrigger > 0) setActiveTab('run');
-  }, [runTrigger]);
-
-  return (
-    <div className="ide-side-drawer">
-      {/* Tab Header */}
-      <div style={{ height: '36px', background: 'var(--bg-1)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 8px', gap: '4px' }}>
-        <button
-          className={`btn btn-sm ${activeTab === 'run' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ padding: '4px 10px', fontSize: '11.5px' }}
-          onClick={() => setActiveTab('run')}
-        >
-          ▶ Output Console
-        </button>
-        <button
-          className={`btn btn-sm ${activeTab === 'agent' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ padding: '4px 10px', fontSize: '11.5px' }}
-          onClick={() => setActiveTab('agent')}
-        >
-          🤖 AI Assistant
-        </button>
-      </div>
-
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'run' && <RunPanel code={code} language={language} runTrigger={runTrigger} />}
-        {activeTab === 'agent' && <AgentPanel embedded />}
-      </div>
-    </div>
-  );
-}
 
 function PassphraseModal({
   onSubmit,
-  onPrivateCopy,
 }: {
-  onSubmit: (key: string) => void;
-  onPrivateCopy: () => void;
+  onSubmit: (key: string, isPrivate: boolean) => void;
 }) {
   const [key, setKey] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   return (
     <div className="login-screen">
       <div className="login-card" style={{ zIndex: 10, maxWidth: 440 }}>
@@ -94,7 +55,7 @@ function PassphraseModal({
           className="login-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (key.trim()) onSubmit(key.trim());
+            if (key.trim()) onSubmit(key.trim(), isPrivate);
           }}
         >
           <div className="form-field">
@@ -111,19 +72,22 @@ function PassphraseModal({
               required
             />
           </div>
-          <button type="submit" className="btn btn-primary btn-full">
-            🚀 Launch Project Session & IDE
+          <div className="form-field" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input 
+              type="checkbox" 
+              id="private-mode-check" 
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              style={{ width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
+            />
+            <label htmlFor="private-mode-check" style={{ fontSize: '13px', color: 'var(--text-secondary)', cursor: 'pointer', margin: 0 }}>
+              Launch in Private Subroom (Isolate edits)
+            </label>
+          </div>
+          <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
+            <Rocket size={14} /> Launch Project Session & IDE
           </button>
         </form>
-
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', textAlign: 'center' }}>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-            Or launch an isolated private subroom session:
-          </p>
-          <button className="btn btn-ghost btn-sm btn-full" onClick={onPrivateCopy}>
-            🔒 Launch Private Subroom Session
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -142,44 +106,42 @@ export function IDEPage() {
     if (savedKey) setPassphrase(savedKey);
   }, [projectId]);
 
-  async function handlePassphraseSubmit(key: string) {
+  async function handlePassphraseSubmit(key: string, isPrivate: boolean) {
+    if (isPrivate) {
+      setCreatingPrivate(true);
+      try {
+        const bl = await branchesApi.list(projectId!);
+        const myPrivateName = `subroom-priv-${user?.username || 'user'}`;
+        let pb = bl.items.find((b) => b.name === myPrivateName);
+
+        if (!pb) {
+          const mainBranch = bl.items.find((b) => b.type === 'main');
+          pb = await branchesApi.create(projectId!, {
+            name: myPrivateName,
+            type: 'private',
+            parent_branch_id: mainBranch?.id,
+          });
+        }
+
+        sessionStorage.setItem(`privatebranch-${projectId}`, pb.id);
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'Failed to setup private subroom', 'error');
+        setCreatingPrivate(false);
+        return;
+      }
+      setCreatingPrivate(false);
+    } else {
+      sessionStorage.removeItem(`privatebranch-${projectId}`);
+    }
+
     sessionStorage.setItem(`roomkey-${projectId}`, key);
     setPassphrase(key);
-  }
-
-  async function handlePrivateCopy() {
-    setCreatingPrivate(true);
-    try {
-      const mainPass = `priv-auto-${user?.id || 'anon'}`;
-      sessionStorage.setItem(`roomkey-${projectId}`, mainPass);
-
-      const bl = await branchesApi.list(projectId!);
-      const myPrivateName = `subroom-priv-${user?.username || 'user'}`;
-      let pb = bl.items.find((b) => b.name === myPrivateName);
-
-      if (!pb) {
-        const mainBranch = bl.items.find((b) => b.type === 'main');
-        pb = await branchesApi.create(projectId!, {
-          name: myPrivateName,
-          type: 'private',
-          parent_branch_id: mainBranch?.id,
-        });
-      }
-
-      sessionStorage.setItem(`privatebranch-${projectId}`, pb.id);
-      setPassphrase(mainPass);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Failed to setup private subroom', 'error');
-    } finally {
-      setCreatingPrivate(false);
-    }
   }
 
   if (!passphrase && !creatingPrivate) {
     return (
       <PassphraseModal
         onSubmit={handlePassphraseSubmit}
-        onPrivateCopy={handlePrivateCopy}
       />
     );
   }
@@ -203,7 +165,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
   const { currentProject, setProject, currentBranch, setBranch } = useProjectStore();
   const openFile = useEditorStore((s) => s.openFile);
-  const language = useEditorStore((s) => s.language);
 
   const [branches, setBranches] = useState<BranchRead[]>([]);
   const [editorValue, setEditorValue] = useState('');
@@ -211,34 +172,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   const [showBranchPrompt, setShowBranchPrompt] = useState(false);
   const [runTrigger, setRunTrigger] = useState(0);
   const [showTeamDrawer, setShowTeamDrawer] = useState(false);
-<<<<<<< Updated upstream
-=======
   const [showAgentPanel, setShowAgentPanel] = useState(false);
-  const [agentDrawerWidth, setAgentDrawerWidth] = useState(380);
-  const isResizingDrawerRef = useRef(false);
-
-  const handleDrawerResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizingDrawerRef.current = true;
-    const startX = e.clientX;
-    const startWidth = agentDrawerWidth;
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      if (!isResizingDrawerRef.current) return;
-      const delta = startX - moveEvent.clientX;
-      const newWidth = Math.min(Math.max(280, startWidth + delta), 850);
-      setAgentDrawerWidth(newWidth);
-    };
-
-    const onMouseUp = () => {
-      isResizingDrawerRef.current = false;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, [agentDrawerWidth]);
 
   const [explorerWidth, setExplorerWidth] = useState(260);
   const isResizingExplorerRef = useRef(false);
@@ -277,13 +211,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   const isReadOnly = Boolean(sessionPrivateBranch) && currentBranch?.id !== sessionPrivateBranch;
   const isSharedModeActive = !sessionPrivateBranch && currentBranch?.type === 'main';
 
-  const isOnNonMainBranch = currentBranch?.type !== 'main';
   const canReview = true; // GitHub model: all project members can view and review merge requests
->>>>>>> Stashed changes
 
   const { encrypt, decrypt } = useCrypto(passphrase, SALT);
 
-  const { doc, text, isConnected, peers } = useYjsDoc({
+  const { doc, text, isConnected, peers, cursors, emitCursor } = useYjsDoc({
     fileId: openFile?.id ?? '__none__',
     branchId: currentBranch?.id ?? 'main',
     encrypt,
@@ -296,6 +228,179 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     projectId ?? null,
     currentBranch?.id ?? null
   );
+
+  // ── Global Botpress & AI Tool Bridge with Full File Permissions ─────────────
+  useEffect(() => {
+    const bridge = {
+      createFile: async (filename: string, initialContent: string = '') => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'create_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content: initialContent })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to create file');
+          toast(`Botpress created '${filename}'`, 'success');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Create failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      readFile: async (filename?: string) => {
+        const target = filename || openFile?.name || 'active file';
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'read_file', project_id: projectId, branch_id: currentBranch?.id, file_path: target })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to read file');
+          return data;
+        } catch (err: any) {
+          toast(`Read failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      writeFile: async (filename: string, content: string) => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'write_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to write file');
+          if (openFile?.name === filename) {
+            handleApplyAgentCode(filename, content);
+          }
+          toast(`Botpress updated '${filename}'`, 'success');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Write failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      modifyFile: async (filename: string, content: string) => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'modify_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to modify file');
+          if (openFile?.name === filename) {
+            handleApplyAgentCode(filename, content);
+          }
+          toast(`Botpress modified '${filename}'`, 'success');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Modify failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      deleteFile: async (filename: string) => {
+        try {
+          const res = await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ action: 'delete_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to delete file');
+          toast(`Botpress deleted '${filename}'`, 'info');
+          refreshTree();
+          return data;
+        } catch (err: any) {
+          toast(`Delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+      listFiles: async () => {
+        const res = await fetch('/api/tools/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: JSON.stringify({ action: 'list_files', project_id: projectId, branch_id: currentBranch?.id })
+        });
+        return await res.json();
+      },
+      getActiveFile: () => openFile?.name || null,
+      getActiveCode: () => editorValue,
+      getProjectId: () => projectId,
+      getBranchId: () => currentBranch?.id || null,
+    };
+
+    (window as any).nulltorTools = bridge;
+    (window as any).botpressTools = bridge;
+
+    const handleMessage = async (event: MessageEvent) => {
+      if (!event.data || typeof event.data !== 'object') return;
+      const { type, action, file_path, content } = event.data;
+      if (type === 'nulltor_tool' || type === 'botpress_tool') {
+        if (action === 'create_file' && file_path) await bridge.createFile(file_path, content || '');
+        else if (action === 'write_file' && file_path) await bridge.writeFile(file_path, content || '');
+        else if (action === 'modify_file' && file_path) await bridge.modifyFile(file_path, content || '');
+        else if (action === 'delete_file' && file_path) await bridge.deleteFile(file_path);
+        else if (action === 'read_file' && file_path) await bridge.readFile(file_path);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [projectId, currentBranch, openFile, editorValue]);
+
+  async function handlePullSyncComplete(newSnapshotBase64?: string | null) {
+    if (newSnapshotBase64 && doc) {
+      try {
+        const decrypted = decrypt(newSnapshotBase64);
+        const newCode = extractTextFromYjsSnapshot(decrypted);
+        if (newCode) {
+          const ytext = doc.getText('content').length > 0 ? doc.getText('content') : doc.getText('monaco');
+          doc.transact(() => {
+            ytext.delete(0, ytext.length);
+            ytext.insert(0, newCode);
+          });
+          setEditorValue(newCode);
+        }
+      } catch (e) {
+        console.error('Failed to apply synced snapshot', e);
+      }
+    }
+    await refreshTree();
+    await handleBranchRefresh();
+  }
+
+  async function handleCommitRequest() {
+    if (!openFile || !currentBranch || !doc) return;
+    const msg = window.prompt("Enter commit message for this revision:");
+    if (!msg) return;
+
+    try {
+      const update = Y.encodeStateAsUpdate(doc);
+      const b64 = btoa(String.fromCharCode(...update));
+      const encryptedSnapshot = encrypt(b64);
+
+      await commitsApi.createCommit(projectId!, {
+        branch_id: currentBranch.id,
+        file_id: openFile.id,
+        message: msg,
+        snapshot: encryptedSnapshot
+      });
+      toast("Committed revision successfully", "success");
+      if (activeTab !== 'git') {
+        setActiveTab('git');
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast(e?.message || "Failed to commit revision", "error");
+    }
+  }
 
   useEffect(() => {
     if (!projectId) return;
@@ -314,6 +419,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         if (savedPrivateBranchId) {
           const pb = bl.items.find(b => b.id === savedPrivateBranchId);
           if (pb) defaultBranch = pb;
+          setSessionPrivateBranch(savedPrivateBranchId);
         }
 
         if (defaultBranch && !currentBranch) setBranch(defaultBranch);
@@ -326,13 +432,27 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     })();
   }, [projectId]);
 
+  const pendingAgentCodeRef = useRef<{ fileId: string; code: string } | null>(null);
+
   useEffect(() => {
-    if (!text) return;
+    if (!text || !doc) return;
+
+    if (pendingAgentCodeRef.current && openFile && pendingAgentCodeRef.current.fileId === openFile.id) {
+      const codeToWrite = pendingAgentCodeRef.current.code;
+      pendingAgentCodeRef.current = null;
+      doc.transact(() => {
+        text.delete(0, text.length);
+        text.insert(0, codeToWrite);
+      }, 'local');
+      setEditorValue(codeToWrite);
+    } else {
+      setEditorValue(text.toString());
+    }
+
     const handler = () => setEditorValue(text.toString());
     text.observe(handler);
-    setEditorValue(text.toString());
     return () => text.unobserve(handler);
-  }, [text]);
+  }, [text, doc, openFile]);
 
   function handleEditorChange(val: string) {
     if (!text || !doc) return;
@@ -343,8 +463,78 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     }, 'local');
   }
 
+  async function handleApplyAgentCode(fileName: string, code: string) {
+    if (!projectId) return;
+
+    // 1. If the target file is already open, directly update its buffer
+    if (openFile && openFile.name === fileName) {
+      if (text && doc) {
+        doc.transact(() => {
+          text.delete(0, text.length);
+          text.insert(0, code);
+        }, 'local');
+      }
+      setEditorValue(code);
+      toast(`Updated ${fileName}`, 'success');
+      return;
+    }
+
+    // 2. Otherwise find or create the target file in the tree
+    const findNode = (nodes: DirectoryNode[]): DirectoryNode | null => {
+      for (const n of nodes) {
+        if (n.name === fileName && n.type === 'file') return n;
+        if (n.children && n.children.length > 0) {
+          const res = findNode(n.children);
+          if (res) return res;
+        }
+      }
+      return null;
+    };
+
+    let updatedTree = await refreshTree();
+    let targetNode = findNode(updatedTree || tree);
+
+    if (!targetNode) {
+      try {
+        targetNode = await directoriesApi.create(projectId, {
+          name: fileName,
+          type: 'file'
+        }, currentBranch?.id);
+        await refreshTree();
+      } catch (err) {
+        console.error("Failed to auto-create file:", err);
+      }
+    }
+
+    if (targetNode) {
+      pendingAgentCodeRef.current = { fileId: targetNode.id, code };
+
+      const editorStore = useEditorStore.getState();
+      editorStore.setFile(targetNode);
+      editorStore.openTab(targetNode);
+
+      if (fileName.endsWith('.py')) editorStore.setLanguage('python');
+      else if (fileName.endsWith('.js') || fileName.endsWith('.jsx')) editorStore.setLanguage('javascript');
+      else if (fileName.endsWith('.ts') || fileName.endsWith('.tsx')) editorStore.setLanguage('typescript');
+      else if (fileName.endsWith('.html')) editorStore.setLanguage('html');
+      else if (fileName.endsWith('.css')) editorStore.setLanguage('css');
+      else editorStore.setLanguage('plaintext');
+
+      setEditorValue(code);
+      toast(`Created and opened ${fileName}`, 'success');
+    }
+  }
+
   async function handleBranchChange(branch: BranchRead) {
     setBranch(branch);
+    if (branch.type === 'private' || branch.type === 'subroom') {
+      sessionStorage.setItem(`privatebranch-${projectId}`, branch.id);
+      setSessionPrivateBranch(branch.id);
+    } else {
+      sessionStorage.removeItem(`privatebranch-${projectId}`);
+      setSessionPrivateBranch(null);
+    }
+    useEditorStore.getState().setFile(null); // Clear open file so it doesn't query a mismatched ID
     toast(`Switched to ${branch.type.toUpperCase()} room: ${branch.name}`, 'info');
     refreshTree();
   }
@@ -354,6 +544,24 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     const bl = await branchesApi.list(projectId);
     setBranches(bl.items);
   }
+
+  function handleJoinSharedRoom() {
+    sessionStorage.removeItem(`privatebranch-${projectId}`);
+    setSessionPrivateBranch(null);
+    const mainB = branches.find(b => b.type === 'main');
+    if (mainB) {
+      setBranch(mainB);
+      useEditorStore.getState().setFile(null); // Clear mismatched file ID
+      toast('Switched to shared main room with write access.', 'success');
+      refreshTree();
+    }
+  }
+
+  // Load pending merge count for admin badge
+  useEffect(() => {
+    if (!projectId || !canReview) return;
+    mergesApi.list(projectId, 'pending').then((data) => setPendingMergeCount(data.length)).catch(() => {});
+  }, [projectId, canReview]);
 
   if (loading) {
     return (
@@ -372,21 +580,16 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => navigate('/dashboard')}
-<<<<<<< Updated upstream
-            title="Return to Projects Dashboard"
-=======
             title="Back to Dashboard"
             style={{ padding: '4px 6px' }}
->>>>>>> Stashed changes
           >
-            <svg viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
-              <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={16} height={16}>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
             </svg>
           </button>
 
-<<<<<<< Updated upstream
-          <NulltorLogo size="sm" showText={false} />
-=======
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Folder size={16} style={{ color: '#f59e0b', flexShrink: 0 }} />
             <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
@@ -394,14 +597,18 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             </span>
           </div>
         </div>
->>>>>>> Stashed changes
 
-          <div className="project-breadcrumbs">
-            <span style={{ color: 'var(--aurora-mint)', fontWeight: 700 }}>Project Session</span>
-            <span className="divider">/</span>
-            <span className="current-project" style={{ fontWeight: 800 }}>{currentProject?.name ?? 'Workspace'}</span>
+        <div className="nexus-topbar-center">
+          <div className="nexus-topbar-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width={14} height={14}>
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" placeholder={currentProject?.name ?? 'Search Project'} />
           </div>
+        </div>
 
+        <div className="nexus-topbar-right">
           {/* Integrated Subroom Selector & Creator */}
           <BranchSelector
             branches={branches}
@@ -410,43 +617,25 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             onBranchChange={handleBranchChange}
             onRefresh={handleBranchRefresh}
           />
-<<<<<<< Updated upstream
-        </div>
-
-        <div className="nexus-topbar-right">
-          {/* Room Live Telemetry Badge */}
-          <span className="status-pill live" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            ● ROOM LIVE ({peers.length + 1} ACTIVE)
-          </span>
-=======
           {/* Solid Orange Live Collaborator Badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px', fontSize: '11px', fontWeight: 700, color: '#ffffff', background: '#ea580c', padding: '3px 8px', borderRadius: '12px', border: '1px solid #f97316' }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ffedd5' }}></span>
             LIVE ({peers.length + 1})
           </div>
->>>>>>> Stashed changes
 
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => toast('Room CRDT delta synced', 'success')}
+            onClick={() => toast('Saved state encrypted locally', 'success')}
             title="Save file state"
+            style={{ padding: '4px 8px' }}
           >
-            💾 Save
+            <Save size={16} />
           </button>
 
-<<<<<<< Updated upstream
-=======
           {/* Solid Sapphire Blue Run Button (Icon Only) */}
->>>>>>> Stashed changes
           <button
-            className="btn btn-primary btn-sm"
+            className="btn btn-sm"
             onClick={() => setRunTrigger((t) => t + 1)}
-<<<<<<< Updated upstream
-            title="Execute Code"
-            style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
-          >
-            ▶ Execute
-=======
             disabled={isRunning}
             title={isRunning ? 'Executing code in sandbox...' : 'Execute Code (Run)'}
             style={{
@@ -467,19 +656,20 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             ) : (
               <Play size={14} fill="currentColor" />
             )}
->>>>>>> Stashed changes
           </button>
 
           <button
-            className={`btn btn-sm ${showTeamDrawer ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setShowTeamDrawer(!showTeamDrawer)}
-            title="Toggle Team Session & Subroom Drawer"
+            className={`btn btn-sm ${showTeamDrawer ? 'btn-secondary' : 'btn-ghost'}`}
+            onClick={() => {
+              setShowTeamDrawer(!showTeamDrawer);
+              if (!showTeamDrawer) setShowAgentPanel(false);
+            }}
+            title="Toggle Team & Subrooms"
+            style={{ padding: '4px 8px', borderRadius: '6px' }}
           >
-            👥 Team & Subrooms {peers.length > 0 && `(${peers.length})`}
+            <Users size={16} />
           </button>
 
-<<<<<<< Updated upstream
-=======
           <button
             className={`btn btn-sm ${showAgentPanel ? 'btn-secondary' : 'btn-ghost'}`}
             onClick={() => {
@@ -535,7 +725,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             </button>
           )}
 
->>>>>>> Stashed changes
           <button className="theme-toggle-btn" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>
             {theme === 'dark' ? (
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -548,17 +737,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
       {/* Main Multi-Pane Body */}
       <div className="ide-body">
-<<<<<<< Updated upstream
-        <div className="ide-sidebar-pane">
-          <FileTree
-            tree={tree}
-            loading={treeLoading}
-            projectId={projectId!}
-            branchId={currentBranch?.id ?? null}
-            onRefresh={refreshTree}
-          />
-        </div>
-=======
         <ActivityBar 
           activeTab={activeTab} 
           onChangeTab={(tab) => {
@@ -664,17 +842,29 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             )}
           </div>
         )}
->>>>>>> Stashed changes
 
         <div className="ide-editor-pane">
           <EditorPane
             value={editorValue}
             onChange={handleEditorChange}
-            readOnly={false}
+            readOnly={isReadOnly}
+            isSharedModeActive={isSharedModeActive}
+            onBranchPrompt={() => setShowBranchPrompt(true)}
+            onJoinSharedRoom={handleJoinSharedRoom}
             peers={peers}
-            onExecuteCode={() => setRunTrigger((t) => t + 1)}
+            cursors={cursors}
+            onCursorChange={emitCursor}
+            runTrigger={runTrigger}
+            onRunStateChange={setIsRunning}
+            onCommitRequest={handleCommitRequest}
+            projectId={projectId}
+            branchId={currentBranch?.id}
+            fileId={openFile?.id}
+            getDoc={() => doc}
+            decrypt={decrypt}
           />
         </div>
+
 
         {showTeamDrawer ? (
           <div className="ide-side-drawer" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -690,7 +880,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             {/* Subrooms List in Room Drawer */}
             <div>
               <div style={{ fontSize: '11px', fontWeight: 700, color: '#0d9488', textTransform: 'uppercase', marginBottom: '8px' }}>
-                🔀 Active Subroom Workspaces ({branches.length})
+                <GitMerge size={14} /> Active Subroom Workspaces ({branches.length})
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -712,7 +902,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>{b.type === 'main' ? '🌿' : b.type === 'subroom' ? '🔀' : '🔒'}</span>
+                        <span>{b.type === 'main' ? <GitBranch size={14} /> : b.type === 'subroom' ? <GitMerge size={14} /> : <Lock size={14} />}</span>
                         <span style={{ fontSize: '12.5px', fontWeight: isCurrent ? 700 : 500, color: isCurrent ? 'var(--aurora-mint)' : 'var(--text-primary)' }}>
                           {b.name}
                         </span>
@@ -743,11 +933,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             {/* Active Members List */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                👥 Active Collaborators ({peers.length + 1})
+                <Users size={14} /> Active Collaborators ({peers.length + 1})
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div className="user-avatar" style={{ width: 36, height: 36, background: 'linear-gradient(135deg, var(--aurora-mint), var(--aurora-purple))' }}>
+                <div className="user-avatar" style={{ width: 36, height: 36, background: 'var(--accent-primary)', color: '#fff' }}>
                   {user?.username.slice(0, 2).toUpperCase() || 'ME'}
                 </div>
                 <div>
@@ -770,16 +960,16 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
               {/* Google Meet Style Video Window */}
               <div style={{ marginTop: '12px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <div style={{ height: '110px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                <div style={{ height: '110px', background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '22px', marginBottom: '2px' }}>📹</div>
+                    <div style={{ fontSize: '22px', marginBottom: '2px' }}><Video size={14} /></div>
                     <div style={{ fontSize: '11px', fontWeight: 600 }}>Live E2EE Video Call</div>
                   </div>
                 </div>
                 <div style={{ padding: '8px 12px', background: 'var(--bg-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
                   <span style={{ fontWeight: 600 }}>{user?.username}'s Room</span>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button className="btn btn-ghost btn-sm" style={{ padding: '2px 6px' }}>🎤 Mute</button>
+                    <button className="btn btn-ghost btn-sm" style={{ padding: '2px 6px' }}><Mic size={14} /> Mute</button>
                     <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px' }}>Leave</button>
                   </div>
                 </div>
@@ -790,13 +980,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               + Invite Peer to Subroom
             </button>
           </div>
-<<<<<<< Updated upstream
-        ) : (
-          <RightPanel code={editorValue} language={language} runTrigger={runTrigger} />
-        )}
-=======
         ) : null}
->>>>>>> Stashed changes
       </div>
 
       {/* Floating AI Agent Card Overlay */}
@@ -847,6 +1031,62 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             handleBranchRefresh();
             handleBranchChange(b);
             setShowBranchPrompt(false);
+          }}
+        />
+      )}
+
+      {showMergeModal && currentBranch && (
+        <MergeRequestModal
+          projectId={projectId!}
+          sourceBranch={currentBranch}
+          branches={branches}
+          currentFileId={openFile?.id ?? null}
+          currentFileName={openFile?.name ?? null}
+          decryptSnapshot={(snap) => snap ? decrypt(snap) : null}
+          getCurrentSnapshot={() => {
+            if (!doc) return null;
+            try {
+              const update = Y.encodeStateAsUpdate(doc);
+              const b64 = btoa(String.fromCharCode(...update));
+              return encrypt(b64);
+            } catch { return null; }
+          }}
+          onClose={() => setShowMergeModal(false)}
+          onCreated={() => setShowMergeModal(false)}
+        />
+      )}
+
+      {showPullSyncModal && currentBranch && (
+        <PullSyncModal
+          projectId={projectId!}
+          currentBranch={currentBranch}
+          branches={branches}
+          currentFileId={openFile?.id ?? null}
+          currentFileName={openFile?.name ?? null}
+          getCurrentSnapshot={() => {
+            if (!doc) return null;
+            try {
+              const update = Y.encodeStateAsUpdate(doc);
+              const b64 = btoa(String.fromCharCode(...update));
+              return encrypt(b64);
+            } catch { return null; }
+          }}
+          decryptSnapshot={(snap) => snap ? decrypt(snap) : null}
+          onClose={() => setShowPullSyncModal(false)}
+          onSyncComplete={handlePullSyncComplete}
+        />
+      )}
+
+      {showMergeReview && (
+        <MergeReviewPanel
+          projectId={projectId!}
+          branches={branches}
+          canReview={canReview}
+          passphrase={passphrase}
+          onClose={() => setShowMergeReview(false)}
+          onMerged={async () => {
+            await refreshTree();
+            await handleBranchRefresh();
           }}
         />
       )}

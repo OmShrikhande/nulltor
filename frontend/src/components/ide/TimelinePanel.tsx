@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { commitsApi, type CommitResponse } from '../../api/commits';
 import { DiffViewerModal } from './DiffViewerModal';
 import { useCrypto } from '../../hooks/useCrypto';

@@ -1,12 +1,10 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { useEditorStore } from '../../store/editorStore';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuthStore } from '../../store/authStore';
-<<<<<<< Updated upstream
-=======
-import { Edit2, File, Palette, User, History, Bot, RefreshCw, X, Save, Terminal as TerminalIcon } from 'lucide-react';
+import { Edit2, File, Palette, History, Bot, RefreshCw, X, Save, Terminal as TerminalIcon } from 'lucide-react';
 import { type RemoteCursor } from '../../hooks/useYjsDoc';
 import { CommitHistoryPanel } from './CommitHistoryPanel';
 import { extractTextFromYjsSnapshot } from './DiffViewerModal';
@@ -16,37 +14,298 @@ import '@xterm/xterm/css/xterm.css';
 import * as Y from 'yjs';
 import { aiApi } from '../../api/ai';
 import { toast } from '../shared/Toast';
->>>>>>> Stashed changes
 
 interface EditorPaneProps {
   value: string;
   onChange: (val: string) => void;
   readOnly?: boolean;
+  isSharedModeActive?: boolean;
   onBranchPrompt?: () => void;
+  onJoinSharedRoom?: () => void;
   peers?: Array<{ id: string; name: string; color: string }>;
-  onExecuteCode?: () => void;
+  cursors?: RemoteCursor[];
+  onCursorChange?: (line: number, column: number) => void;
+  runTrigger?: number;
+  onRunStateChange?: (running: boolean) => void;
+  onCommitRequest?: () => void;
+  projectId?: string;
+  branchId?: string;
+  fileId?: string;
+  getDoc?: () => any;
+  decrypt?: (cipherText: string) => string;
 }
 
-export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = [] }: EditorPaneProps) {
-  const { openFile, language, setDirty } = useEditorStore();
+export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBranchPrompt, onJoinSharedRoom, cursors = [], onCursorChange, runTrigger = 0, onRunStateChange, onCommitRequest, projectId, branchId, getDoc, decrypt }: EditorPaneProps) {
+  const { openFile, openTabs, language, setDirty, setOpenFile, closeTab } = useEditorStore();
   const { theme } = useTheme();
   const user = useAuthStore((s) => s.user);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
-  // Terminal state
+
+  // Terminal State
   const [showTerminal, setShowTerminal] = useState(true);
   const [terminalTab, setTerminalTab] = useState<'terminal' | 'problems' | 'output'>('terminal');
+  const [terminalHeight, setTerminalHeight] = useState(250);
+  const isDraggingRef = useRef(false);
+
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const xtermRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
+  const [copilotPrompt, setCopilotPrompt] = useState('');
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [, setShowAiBadge] = useState(false);
+  const aiDecorationsRef = useRef<string[]>([]);
+
+  // Function to highlight lines modified by AI with a fading shimmer
+  const highlightAiChanges = useCallback((startLine = 1, endLine = 100) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+
+    const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
+    for (let l = Math.max(1, startLine); l <= endLine; l++) {
+      decorations.push({
+        range: {
+          startLineNumber: l,
+          startColumn: 1,
+          endLineNumber: l,
+          endColumn: 1,
+        },
+        options: {
+          isWholeLine: true,
+          className: 'ai-inserted-line-glow',
+          linesDecorationsClassName: 'ai-inserted-gutter',
+        },
+      });
+    }
+
+    aiDecorationsRef.current = editor.deltaDecorations(aiDecorationsRef.current, decorations);
+    setShowAiBadge(true);
+
+    setTimeout(() => {
+      if (editorRef.current) {
+        aiDecorationsRef.current = editorRef.current.deltaDecorations(aiDecorationsRef.current, []);
+      }
+      setShowAiBadge(false);
+    }, 3200);
+  }, []);
+
+  // Handle Cmd+K / Ctrl+K keyboard shortcut for AI Copilot and Esc to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCopilot((prev) => !prev);
+      }
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        setShowCopilot(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
+  async function handleCopilotGenerate() {
+    if (!copilotPrompt.trim() || !openFile) return;
+    setCopilotLoading(true);
+    try {
+      const res = await aiApi.generate({
+        prompt: copilotPrompt.trim(),
+        file_name: openFile.name,
+        file_content: value,
+        language: language,
+        action: 'generate',
+      });
+
+      if (res.code) {
+        const yDoc = getDoc ? getDoc() : null;
+        if (yDoc) {
+          const yText = yDoc.getText('monaco') || yDoc.getText('content');
+          if (yText && yText.length > 0) {
+            yText.delete(0, yText.length);
+            yText.insert(0, res.code);
+          }
+        }
+        onChange(res.code);
+        toast(`✦ AI generated code applied to ${openFile.name}`, 'success');
+        setShowCopilot(false);
+        setCopilotPrompt('');
+
+        const lineCount = res.code.split('\n').length;
+        highlightAiChanges(1, Math.min(lineCount, 500));
+      }
+    } catch (e: any) {
+      toast(e.message || 'AI generation failed', 'error');
+    } finally {
+      setCopilotLoading(false);
+    }
+  }
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    isDraggingRef.current = true;
+    const startY = e.clientY;
+    const startHeight = terminalHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const deltaY = startY - moveEvent.clientY;
+      const newHeight = Math.max(100, Math.min(window.innerHeight * 0.8, startHeight + deltaY));
+      setTerminalHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [terminalHeight]);
+
+  // Mount/Unmount xterm
+  useEffect(() => {
+    if (showTerminal && terminalTab === 'terminal' && terminalRef.current && !xtermRef.current) {
+      const term = new Terminal({
+        theme: { background: '#0b0e15', foreground: '#e0e6ed', cursor: '#01EFAC' },
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontSize: 13,
+        cursorBlink: true,
+        convertEol: true,
+      });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current);
+      
+      // Delay fit to ensure font metrics are loaded
+      setTimeout(() => {
+        try { fitAddon.fit(); } catch(e) {}
+      }, 50);
+
+      term.writeln('\x1b[36mReady. Press "Execute" to run ' + (openFile ? openFile.name : 'code') + '.\x1b[0m');
+
+      xtermRef.current = term;
+      fitAddonRef.current = fitAddon;
+
+      // Handle terminal input
+      term.onData(data => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(data);
+        }
+      });
+
+      // Handle Copy/Paste via keyboard shortcuts
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === 'keydown') {
+          // Ctrl+C (Copy if text is selected)
+          if (e.ctrlKey && e.code === 'KeyC' && term.hasSelection()) {
+            navigator.clipboard.writeText(term.getSelection());
+            term.clearSelection();
+            return false;
+          }
+          // Ctrl+V (Paste)
+          if (e.ctrlKey && e.code === 'KeyV') {
+            navigator.clipboard.readText().then(text => {
+              if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(text);
+              }
+            }).catch(() => {});
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    return () => {
+      // Don't dispose on every render, just keep it mounted or handle carefully
+    };
+  }, [showTerminal, terminalTab, openFile]);
+
+  // Handle Resize fitting
+  useEffect(() => {
+    if (fitAddonRef.current && xtermRef.current) {
+      fitAddonRef.current.fit();
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'resize', cols: xtermRef.current.cols, rows: xtermRef.current.rows }));
+        } catch {}
+      }
+    }
+  }, [terminalHeight, showTerminal]);
+
+  // Run Trigger
+  useEffect(() => {
+    if (runTrigger > 0) {
+      setShowTerminal(true);
+      setTerminalTab('terminal');
+      handleRun();
+    }
+    // eslint-disable-next-line
+  }, [runTrigger]);
+
+    function handleRun() {
+    if (!xtermRef.current) return;
+    const term = xtermRef.current;
+    
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    // Reset the terminal so winpty's coordinate system (1,1) perfectly matches xterm.js
+    term.reset();
+    onRunStateChange?.(true);
+
+    const code = editorRef.current?.getValue() || '';
+    
+    // Connect to WebSocket using same host but ws protocol
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/terminal`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    const safetyTimer = setTimeout(() => {
+      onRunStateChange?.(false);
+    }, 6000);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        code,
+        language,
+        cols: term.cols,
+        rows: term.rows
+      }));
+    };
+
+    ws.onmessage = (e) => {
+      term.write(e.data);
+      onRunStateChange?.(false);
+      clearTimeout(safetyTimer);
+    };
+
+    ws.onerror = () => {
+      term.writeln('\r\n\x1b[31mWebSocket Connection Error\x1b[0m');
+      onRunStateChange?.(false);
+      clearTimeout(safetyTimer);
+    };
+
+    ws.onclose = () => {
+      onRunStateChange?.(false);
+      clearTimeout(safetyTimer);
+    };
+  }
 
   // Live cursor position state for showing user name badge
   const [cursorPos, setCursorPos] = useState<{ line: number; column: number }>({ line: 1, column: 1 });
 
-  function handleMount(editor: Monaco.editor.IStandaloneCodeEditor) {
+  function handleMount(editor: Monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof Monaco) {
     editorRef.current = editor;
     editor.focus();
 
-<<<<<<< Updated upstream
-    // Listen to cursor position changes to position the user name tag badge
-=======
     // Define sleek custom developer dark theme with Sapphire Blue primary
     monacoInstance.editor.defineTheme('nulltor-dark-pro', {
       base: 'vs-dark',
@@ -119,9 +378,10 @@ export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = 
     }
 
     // Listen to cursor position changes to broadcast + show user badge
->>>>>>> Stashed changes
     editor.onDidChangeCursorPosition((e) => {
-      setCursorPos({ line: e.position.lineNumber, column: e.position.column });
+      const { lineNumber, column } = e.position;
+      setCursorPos({ line: lineNumber, column });
+      onCursorChange?.(lineNumber, column);
     });
   }
 
@@ -165,23 +425,49 @@ export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = 
     );
   }
 
-  const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
-
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* File Tabs Bar */}
-      <div className="editor-tab-bar" style={{ height: '36px', background: 'var(--bg-1)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 12px', justifyContent: 'space-between' }}>
-        <div className="editor-tab active" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', background: 'var(--bg-0)', borderTop: '2px solid var(--aurora-mint)', borderRadius: '4px 4px 0 0', fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
-          <span className="font-mono" style={{ fontSize: '11px', color: 'var(--aurora-mint)' }}>
-            {openFile.name.endsWith('.ts') || openFile.name.endsWith('.js') ? '⚡ TS' : openFile.name.endsWith('.css') ? '🎨 CSS' : '📄'}
-          </span>
-          {openFile.name}
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '4px', cursor: 'pointer' }}>×</span>
+      {/* File Tabs Bar — Multi-Tab */}
+      <div className="editor-tab-bar" style={{ height: '36px', background: 'var(--bg-1)', display: 'flex', alignItems: 'center', padding: '0', justifyContent: 'space-between', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', height: '100%', overflowX: 'auto', flex: 1 }}>
+          {openTabs.map((tab) => {
+            const isActive = tab.id === openFile.id;
+            const ext = tab.name.split('.').pop()?.toLowerCase() ?? '';
+            const tabIcon = ['ts','tsx'].includes(ext) ? <span style={{ color: '#3178c6' }}><File size={13} /></span>
+              : ['js','jsx'].includes(ext) ? <span style={{ color: '#f7df1e' }}><File size={13} /></span>
+              : ext === 'py' ? <span style={{ color: '#3776AB' }}><File size={13} /></span>
+              : ext === 'css' ? <span style={{ color: '#38bdf8' }}><Palette size={13} /></span>
+              : <span style={{ color: 'var(--text-muted)' }}><File size={13} /></span>;
+            return (
+              <div
+                key={tab.id}
+                className={`editor-tab${isActive ? ' active' : ''}`}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '0 10px 0 12px', whiteSpace: 'nowrap', cursor: 'pointer',
+                  background: isActive ? 'var(--bg-0)' : 'transparent',
+                  borderTop: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+                  fontSize: '12.5px', fontWeight: isActive ? 600 : 400,
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                  borderRight: '1px solid var(--border)', height: '100%',
+                  flexShrink: 0,
+                }}
+                onClick={() => setOpenFile(tab)}
+              >
+                {tabIcon}
+                {tab.name}
+                <span
+                  style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: 2, opacity: 0.7, lineHeight: 1 }}
+                  onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                  title={`Close ${tab.name}`}
+                >
+                  ×
+                </span>
+              </div>
+            );
+          })}
         </div>
 
-<<<<<<< Updated upstream
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-=======
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingRight: '12px' }}>
           {typingMessage && (
             <span className="typing-indicator-pill" title="User actively typing">
@@ -212,7 +498,6 @@ export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = 
           >
             <History size={14} />
           </button>
->>>>>>> Stashed changes
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setShowTerminal(!showTerminal)}
@@ -224,70 +509,6 @@ export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = 
         </div>
       </div>
 
-<<<<<<< Updated upstream
-      {readOnly && (
-        <div style={{ padding: '8px 16px', background: 'var(--branch-sub-bg)', color: 'var(--branch-sub-text)', borderBottom: '1px solid var(--branch-sub-border)', fontSize: '12.5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span><strong>Read-only mode.</strong> You are viewing the canonical main branch.</span>
-          <button className="btn btn-sm btn-primary" onClick={onBranchPrompt}>
-            Join Subroom or Create Fork
-          </button>
-        </div>
-      )}
-
-      {/* Editor Main Canvas with Live Remote Cursor User Name Badge */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Floating User Name Cursor Badge displaying current user position */}
-        <div
-          className="monaco-user-cursor-tag"
-          style={{
-            top: `${Math.min(Math.max((cursorPos.line - 1) * 19 + 6, 6), 400)}px`,
-            left: `${Math.min(cursorPos.column * 8 + 48, 600)}px`,
-          }}
-        >
-          <span className="cursor-name-badge" style={{ background: 'linear-gradient(135deg, var(--aurora-mint), var(--aurora-violet))', color: '#0b0e15' }}>
-            ✏️ {currentUserDisplayName} is editing (L:{cursorPos.line}, C:{cursorPos.column})
-          </span>
-        </div>
-
-        {/* Remote Peers Cursors */}
-        {peers.map((peer, i) => (
-          <div
-            key={peer.id || i}
-            className="monaco-user-cursor-tag"
-            style={{
-              top: `${(i + 2) * 24}px`,
-              left: `${180 + i * 40}px`,
-            }}
-          >
-            <span className="cursor-name-badge" style={{ background: peer.color || '#01EFAC', color: '#0b0e15' }}>
-              👤 {peer.name} is typing…
-            </span>
-          </div>
-        ))}
-
-        <Editor
-          height="100%"
-          language={language}
-          value={value}
-          onChange={handleChange}
-          onMount={handleMount}
-          theme={monacoTheme}
-          options={{
-            readOnly,
-            fontSize: 14,
-            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            fontLigatures: true,
-            minimap: { enabled: true },
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            tabSize: 2,
-            renderWhitespace: 'selection',
-            smoothScrolling: true,
-            cursorBlinking: 'smooth',
-            bracketPairColorization: { enabled: true },
-          }}
-        />
-=======
       {/* Floating Inline AI Copilot Prompt Bar (Ctrl+K) */}
       {showCopilot && (
         <div style={{
@@ -525,12 +746,24 @@ export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = 
             </div>
           )}
         </div>
->>>>>>> Stashed changes
       </div>
 
       {/* IDE Bottom Terminal Panel */}
       {showTerminal && (
-        <div className="ide-terminal-panel">
+        <div className="ide-terminal-panel" style={{ height: `${terminalHeight}px`, flexShrink: 0 }}>
+          {/* Resize Handle */}
+          <div
+            onMouseDown={startResize}
+            style={{
+              height: '4px',
+              width: '100%',
+              background: 'transparent',
+              cursor: 'row-resize',
+              position: 'absolute',
+              top: '-2px',
+              zIndex: 10,
+            }}
+          />
           <div className="ide-terminal-header">
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
@@ -561,27 +794,132 @@ export function EditorPane({ value, onChange, readOnly, onBranchPrompt, peers = 
             </button>
           </div>
 
-          <div className="ide-terminal-body">
-            {terminalTab === 'terminal' && (
-              <div>
-                <div style={{ color: '#01EFAC', marginBottom: '4px' }}>nulltor-dev-server: listening on port 3000</div>
-                <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>Compiled successfully in 342ms. Zero-knowledge E2EE active.</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--aurora-mint)' }}>
-                  <span>$</span>
-                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>nulltor run --branch {openFile ? openFile.name : 'main'}</span>
-                  <span className="status-dot" style={{ background: '#01EFAC', marginLeft: '4px' }} />
-                </div>
-              </div>
-            )}
+          <div className="ide-terminal-body" style={{ padding: 0, overflow: 'hidden', height: '100%' }}>
+            <div 
+              ref={terminalRef} 
+              style={{ 
+                height: '100%', 
+                width: '100%', 
+                display: terminalTab === 'terminal' ? 'block' : 'none',
+              }} 
+            />
             {terminalTab === 'problems' && (
-              <div style={{ color: 'var(--text-secondary)' }}>No lint errors or syntax issues detected.</div>
+              <div style={{ padding: '12px', color: 'var(--text-secondary)' }}>No lint errors or syntax issues detected.</div>
             )}
             {terminalTab === 'output' && (
-              <div style={{ color: 'var(--text-secondary)' }}>[Nulltor Build Engine] Standalone bundle ready in public_react.</div>
+              <div style={{ padding: '12px', color: 'var(--text-secondary)' }}>[Nulltor Build Engine] Standalone bundle ready in public_react.</div>
             )}
           </div>
         </div>
       )}
+
+      {showHistory && projectId && branchId && openFile && (
+        <CommitHistoryPanel
+          projectId={projectId}
+          branchId={branchId}
+          fileId={openFile.id}
+          fileName={openFile.name}
+          getCurrentSnapshot={() => {
+            const doc = getDoc?.();
+            if (!doc) return null;
+            return btoa(String.fromCharCode.apply(null, Array.from(Y.encodeStateAsUpdate(doc))));
+          }}
+          decryptSnapshot={(snapshotEncrypted) => {
+            return decrypt ? decrypt(snapshotEncrypted) : snapshotEncrypted;
+          }}
+          onRevert={(snapshotBase64) => {
+            const doc = getDoc?.();
+            const textToRevert = extractTextFromYjsSnapshot(snapshotBase64);
+            if (doc) {
+              const ytext = doc.getText('content').length > 0 ? doc.getText('content') : doc.getText('monaco');
+              doc.transact(() => {
+                ytext.delete(0, ytext.length);
+                ytext.insert(0, textToRevert);
+              });
+            }
+            if (editorRef.current) {
+              editorRef.current.setValue(textToRevert);
+            }
+            onChange(textToRevert);
+            setDirty(true);
+          }}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </div>
   );
 }
+
+function RemoteCursorOverlay({ cursors, editor }: { cursors: RemoteCursor[]; editor: Monaco.editor.IStandaloneCodeEditor | null }) {
+  const decorationsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const newDecorations = cursors.map((c) => ({
+      range: { startLineNumber: c.line, startColumn: c.column, endLineNumber: c.line, endColumn: c.column },
+      options: {
+        className: `remote-cursor-${c.socketId.replace(/[^a-zA-Z0-9-]/g, '')}`,
+        hoverMessage: { value: c.name },
+        beforeContentClassName: `remote-cursor-flag-${c.socketId.replace(/[^a-zA-Z0-9-]/g, '')}`,
+        stickiness: 1 // TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
+      }
+    }));
+
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
+
+    let styleEl = document.getElementById('remote-cursors-styles');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'remote-cursors-styles';
+      document.head.appendChild(styleEl);
+    }
+
+    const css = cursors.map(c => {
+      const safeId = c.socketId.replace(/[^a-zA-Z0-9-]/g, '');
+      const color = c.color || '#01EFAC';
+      return `
+      .remote-cursor-${safeId} {
+        border-left: 2px solid ${color};
+        position: relative;
+        z-index: 10;
+        margin-left: -1px;
+      }
+      .remote-cursor-flag-${safeId}::before {
+        content: '${c.name.replace(/'/g, "\\'")}';
+        position: absolute;
+        top: -16px;
+        left: -1px;
+        background: ${color};
+        color: #0b0e15;
+        font-size: 9px;
+        padding: 0 4px;
+        border-radius: 2px 2px 2px 0;
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 100;
+        font-family: sans-serif;
+        font-weight: 800;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      }
+      `;
+    }).join('\n');
+
+    styleEl.innerHTML = css;
+
+  }, [cursors, editor]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (editor && decorationsRef.current.length > 0) {
+        editor.deltaDecorations(decorationsRef.current, []);
+      }
+      const styleEl = document.getElementById('remote-cursors-styles');
+      if (styleEl) styleEl.remove();
+    };
+  }, [editor]);
+
+  return null;
+}
+

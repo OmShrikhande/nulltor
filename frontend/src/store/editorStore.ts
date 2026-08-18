@@ -1,15 +1,6 @@
 import { create } from 'zustand';
 import type { DirectoryNode } from '../api/directories';
 
-interface EditorState {
-  openFile: DirectoryNode | null;
-  language: string;
-  isDirty: boolean;
-  setOpenFile: (file: DirectoryNode | null) => void;
-  setLanguage: (lang: string) => void;
-  setDirty: (dirty: boolean) => void;
-}
-
 function detectLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const map: Record<string, string> = {
@@ -35,9 +26,6 @@ function detectLanguage(filename: string): string {
   return map[ext] ?? 'plaintext';
 }
 
-<<<<<<< Updated upstream
-export const useEditorStore = create<EditorState>((set) => ({
-=======
 interface EditorState {
   openFile: DirectoryNode | null;
   openTabs: DirectoryNode[];
@@ -55,8 +43,8 @@ interface EditorState {
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
->>>>>>> Stashed changes
   openFile: null,
+  openTabs: [],
   language: 'plaintext',
   isDirty: false,
   fileErrors: {},
@@ -66,12 +54,51 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })),
 
   setOpenFile: (file) =>
-    set({
-      openFile: file,
-      language: file ? detectLanguage(file.name) : 'plaintext',
-      isDirty: false,
+    set((state) => {
+      if (!file) return { openFile: null, language: 'plaintext', isDirty: false };
+      // Add to tabs if not already there
+      const alreadyOpen = state.openTabs.find((t) => t.id === file.id);
+      const openTabs = alreadyOpen ? state.openTabs : [...state.openTabs, file];
+      return {
+        openFile: file,
+        openTabs,
+        language: detectLanguage(file.name),
+        isDirty: false,
+      };
+    }),
+
+  openTab: (file) =>
+    set((state) => {
+      const alreadyOpen = state.openTabs.find((t) => t.id === file.id);
+      const openTabs = alreadyOpen ? state.openTabs : [...state.openTabs, file];
+      return {
+        openFile: file,
+        openTabs,
+        language: detectLanguage(file.name),
+        isDirty: false,
+      };
+    }),
+
+  closeTab: (id) =>
+    set((state) => {
+      const openTabs = state.openTabs.filter((t) => t.id !== id);
+      // If we closed the currently open tab, switch to the last remaining tab
+      const openFile =
+        state.openFile?.id === id
+          ? openTabs.length > 0
+            ? openTabs[openTabs.length - 1]
+            : null
+          : state.openFile;
+      return {
+        openTabs,
+        openFile,
+        language: openFile ? detectLanguage(openFile.name) : 'plaintext',
+        isDirty: false,
+      };
     }),
 
   setLanguage: (lang) => set({ language: lang }),
   setDirty: (dirty) => set({ isDirty: dirty }),
+  // alias
+  setFile: (file) => get().setOpenFile(file),
 }));

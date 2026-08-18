@@ -1,17 +1,19 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usersApi, type UserCreate } from '../api/users';
 import { type UserRead } from '../api/auth';
-import { Sidebar } from '../components/shared/Sidebar';
+import { useAuthStore } from '../store/authStore';
+import { useTheme } from '../context/ThemeContext';
+import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { toast } from '../components/shared/Toast';
 import { Modal } from '../components/shared/Modal';
-<<<<<<< Updated upstream
-=======
-import { Shield, UserPlus, Key, Mail, User, ShieldAlert, CheckCircle2, XCircle, Menu, Crown, Laptop } from 'lucide-react';
-import { useUIStore } from '../store/uiStore';
->>>>>>> Stashed changes
+import { Shield, Crown, Laptop, UserCheck, PlusCircle, Folder, FileText, Settings, Sun, Moon } from 'lucide-react';
 
 export function SystemUsersPage() {
-  const { toggleSidebar } = useUIStore();
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { theme, toggleTheme } = useTheme();
+
   const [users, setUsers] = useState<UserRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -32,20 +34,20 @@ export function SystemUsersPage() {
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  async function handleToggleActive(user: UserRead) {
+  async function handleToggleActive(targetUser: UserRead) {
     try {
-      await usersApi.update(user.id, { is_active: !user.is_active });
-      toast(`User "${user.username}" ${user.is_active ? 'deactivated' : 'activated'}`, 'success');
+      await usersApi.update(targetUser.id, { is_active: !targetUser.is_active });
+      toast(`User "${targetUser.username}" ${targetUser.is_active ? 'deactivated' : 'activated'}`, 'success');
       loadUsers();
     } catch {
       toast('Failed to update user status', 'error');
     }
   }
 
-  async function handleRoleChange(user: UserRead, newRole: 'superadmin' | 'admin' | 'member') {
+  async function handleRoleChange(targetUser: UserRead, newRole: 'superadmin' | 'admin' | 'member') {
     try {
-      await usersApi.update(user.id, { role: newRole });
-      toast(`Role for ${user.username} updated to ${newRole.toUpperCase()}`, 'success');
+      await usersApi.update(targetUser.id, { role: newRole });
+      toast(`Role for ${targetUser.username} updated to ${newRole.toUpperCase()}`, 'success');
       loadUsers();
     } catch {
       toast('Failed to update user role', 'error');
@@ -63,195 +65,400 @@ export function SystemUsersPage() {
   const adminCount = users.filter((u) => u.role === 'admin').length;
   const memberCount = users.filter((u) => u.role === 'member').length;
 
+  const initials = user?.username?.slice(0, 2).toUpperCase() ?? '??';
+
   return (
-    <div className="app-shell">
-      <Sidebar />
-      <div className="main-content">
-        <div className="page-container">
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+    <div style={{ height: '100vh', width: '100vw', background: 'var(--bg-0)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Universal Workspace Nexus Topbar */}
+      <header
+        style={{
+          height: '48px',
+          background: 'var(--header-bg, #0d0d0d)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 20px',
+          flexShrink: 0,
+          zIndex: 50,
+        }}
+      >
+        {/* Left: Branding & Core Navigation Tabs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ cursor: 'pointer' }} onClick={() => navigate('/dashboard')}>
+            <NulltorLogo size="sm" />
+          </div>
+
+          <nav style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              onClick={() => navigate('/dashboard')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <Folder size={14} />
+              <span>Workspaces</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/logs')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <FileText size={14} />
+              <span>Audit Telemetry</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/users')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <Shield size={14} />
+              <span>Governance & Team</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/settings')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <Settings size={14} />
+              <span>Settings</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Right: Theme Toggle & Circular Profile Avatar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            style={{ padding: '5px 8px', borderRadius: '6px' }}
+          >
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+
+          <button
+            onClick={() => navigate('/profile')}
+            title={`My Profile (${user?.username || 'User'})`}
+            style={{
+              width: '30px',
+              height: '30px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+              color: '#ffffff',
+              fontSize: '11.5px',
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              padding: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.08)';
+              e.currentTarget.style.boxShadow = '0 3px 12px rgba(37, 99, 235, 0.55)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.35)';
+            }}
+          >
+            {initials}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Workspace Canvas with Fixed Height IDE Traffic Dot Card */}
+      <main style={{ flex: 1, padding: '16px 24px 20px', maxWidth: '1600px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <div
+          className="ide-traffic-dot-card"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            background: 'var(--bg-1)',
+            border: '1px solid var(--border)',
+            borderRadius: '12px',
+            boxShadow: 'var(--shadow)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Card Header with 3 Traffic Dots, Controls & Create Button */}
+          <div
+            style={{
+              height: '42px',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--bg-2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 16px',
+              flexShrink: 0,
+              userSelect: 'none',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }}></span>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+              </div>
+              <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Shield size={14} style={{ color: '#2563eb' }} />
+                System Governance & User Hierarchy
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="text"
+                placeholder="Search username or email…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ padding: '4px 10px', fontSize: '12px', width: '180px', borderRadius: '6px', background: 'var(--bg-0)', border: '1px solid var(--border)' }}
+              />
+
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                style={{ padding: '4px 28px 4px 10px', fontSize: '12px', width: '120px', borderRadius: '6px' }}
+              >
+                <option value="all">All Roles</option>
+                <option value="superadmin">Superadmin</option>
+                <option value="admin">Admin</option>
+                <option value="member">Member</option>
+              </select>
+
               <button
-                className="btn-icon"
-                onClick={toggleSidebar}
-                title="Toggle Navigation Menu"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowCreate(true)}
                 style={{
-                  width: '36px',
-                  height: '36px',
-                  background: 'var(--bg-1)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--text-primary)',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  gap: 5,
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  border: '1px solid #1d4ed8',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '12px',
                 }}
               >
-                <Menu size={18} />
+                <PlusCircle size={14} /> Add User
               </button>
-
-              <div>
-                <h1 style={{ fontSize: '24px', fontWeight: 800 }}>
-                  System <span style={{ color: 'var(--sapphire-light)' }}>Governance</span> & User Hierarchy
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>
-                  Manage user access permissions, elevate roles according to security hierarchy, and add new system members.
-                </p>
-              </div>
-            </div>
-
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              + Add New User
-            </button>
-          </div>
-
-          {/* User Hierarchy Level Breakdown Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
-            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-violet)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--aurora-violet)', textTransform: 'uppercase' }}>
-                  👑 Level 1 · Superadmin
-                </span>
-                <span className="branch-pill private">{superadminCount} Users</span>
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                Full system control, global audit telemetry, user provisioning & project deletion rights.
-              </p>
-            </div>
-
-            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-blue)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--aurora-blue)', textTransform: 'uppercase' }}>
-                  🛡️ Level 2 · Admin
-                </span>
-                <span className="branch-pill subroom">{adminCount} Users</span>
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                Project workspace creation, team invitation, branch management & project settings.
-              </p>
-            </div>
-
-            <div className="glass-card" style={{ borderLeft: '4px solid var(--aurora-mint)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--aurora-mint)', textTransform: 'uppercase' }}>
-                  💻 Level 3 · Member
-                </span>
-                <span className="branch-pill main">{memberCount} Users</span>
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                Real-time E2EE collaborative editing, subroom branch creation & code execution.
-              </p>
             </div>
           </div>
 
-          {/* Search & Filter Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', gap: '12px', width: '100%', maxWidth: '500px' }}>
-              <div className="form-field" style={{ margin: 0, flex: 1 }}>
-                <input
-                  type="text"
-                  placeholder="Search by username or email…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{ padding: '7px 12px', fontSize: '13px' }}
-                />
+          {/* Governance Content Body - Fixed Container with Inner Scroll */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+            {/* Role Distribution Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+              <div className="stat-box" style={{ background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="stat-label">Total Users</span>
+                  <UserCheck size={16} style={{ color: 'var(--text-muted)' }} />
+                </div>
+                <div className="stat-value" style={{ fontSize: '20px', marginTop: '4px' }}>{users.length}</div>
               </div>
 
-              <div className="form-field" style={{ margin: 0, width: '160px' }}>
-                <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  style={{ padding: '7px 12px', fontSize: '13px' }}
-                >
-                  <option value="all">All Roles</option>
-                  <option value="superadmin">Superadmin</option>
-                  <option value="admin">Admin</option>
-                  <option value="member">Member</option>
-                </select>
+              <div className="stat-box" style={{ background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="stat-label">Superadmins (L1)</span>
+                  <Crown size={16} style={{ color: '#818cf8' }} />
+                </div>
+                <div className="stat-value" style={{ fontSize: '20px', color: '#818cf8', marginTop: '4px' }}>{superadminCount}</div>
+              </div>
+
+              <div className="stat-box" style={{ background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="stat-label">Admins (L2)</span>
+                  <Shield size={16} style={{ color: '#38bdf8' }} />
+                </div>
+                <div className="stat-value" style={{ fontSize: '20px', color: '#38bdf8', marginTop: '4px' }}>{adminCount}</div>
+              </div>
+
+              <div className="stat-box" style={{ background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="stat-label">Members (L3)</span>
+                  <Laptop size={16} style={{ color: '#10b981' }} />
+                </div>
+                <div className="stat-value" style={{ fontSize: '20px', color: '#10b981', marginTop: '4px' }}>{memberCount}</div>
               </div>
             </div>
 
-            <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-              Showing {filteredUsers.length} of {users.length} accounts
-            </div>
-          </div>
-
-          {/* Users Hierarchy Table */}
-          <div style={{ background: 'var(--bg-1)', borderRadius: 'var(--radius)', border: '1px solid var(--border)', overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
+            {/* Users Table */}
             {loading ? (
-              <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                Loading system accounts…
+              <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-secondary)' }}>
+                Loading user accounts…
               </div>
             ) : filteredUsers.length === 0 ? (
-              <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                No accounts found matching search filter.
+              <div className="glass-card" style={{ padding: '48px', textAlign: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+                  <Shield size={32} />
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '6px' }}>No System Users Found</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No accounts match the current filter query.</p>
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ background: 'var(--bg-2)', borderBottom: '1px solid var(--border)', fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>User / Account</th>
-                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Email Address</th>
-                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Hierarchy Level</th>
-                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Management Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers.map((u) => (
-                    <tr key={u.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background var(--transition-fast)' }}>
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div className="user-avatar" style={{ width: 32, height: 32 }}>
-                            {u.username.slice(0, 2).toUpperCase()}
-                          </div>
-                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{u.username}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '14px 16px', color: 'var(--text-secondary)' }}>{u.email}</td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <select
-                          value={u.role}
-                          onChange={(e) => handleRoleChange(u, e.target.value as any)}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            background: 'var(--bg-2)',
-                            border: '1px solid var(--border)',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <option value="member">Level 3 · Member</option>
-                          <option value="admin">Level 2 · Admin</option>
-                          <option value="superadmin">Level 1 · Superadmin</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '14px 16px' }}>
-                        {u.is_active ? (
-                          <span className="status-pill live">Active</span>
-                        ) : (
-                          <span className="status-pill offline">Disabled</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        <button
-                          className={`btn btn-sm ${u.is_active ? 'btn-ghost' : 'btn-primary'}`}
-                          onClick={() => handleToggleActive(u)}
-                        >
-                          {u.is_active ? 'Deactivate Account' : 'Enable Account'}
-                        </button>
-                      </td>
+              <div style={{ background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <table className="members-table" style={{ margin: 0 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-2)' }}>
+                      <th style={{ padding: '10px 16px', fontSize: '11px', fontWeight: 800 }}>Account & Identity</th>
+                      <th style={{ padding: '10px 16px', fontSize: '11px', fontWeight: 800 }}>Hierarchy Role</th>
+                      <th style={{ padding: '10px 16px', fontSize: '11px', fontWeight: 800 }}>System Status</th>
+                      <th style={{ padding: '10px 16px', fontSize: '11px', fontWeight: 800 }}>Security Flags</th>
+                      <th style={{ padding: '10px 16px', fontSize: '11px', fontWeight: 800, textAlign: 'right' }}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((u) => (
+                      <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '50%',
+                                background: u.role === 'superadmin' ? 'linear-gradient(135deg, #6366f1, #818cf8)' : '#2563eb',
+                                color: '#ffffff',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              {u.username.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{u.username}</div>
+                              <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>{u.email}</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '12px 16px' }}>
+                          <select
+                            value={u.role}
+                            onChange={(e) => handleRoleChange(u, e.target.value as any)}
+                            disabled={u.id === user?.id}
+                            style={{
+                              padding: '4px 24px 4px 8px',
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              borderRadius: '6px',
+                              width: '130px',
+                            }}
+                          >
+                            <option value="member">Member (L3)</option>
+                            <option value="admin">Admin (L2)</option>
+                            <option value="superadmin">Superadmin (L1)</option>
+                          </select>
+                        </td>
+
+                        <td style={{ padding: '12px 16px' }}>
+                          <span
+                            className={`status-pill ${u.is_active ? 'live' : 'draft'}`}
+                            style={{ fontSize: '10.5px' }}
+                          >
+                            ● {u.is_active ? 'Active' : 'Deactivated'}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '12px 16px' }}>
+                          {u.requires_password_change ? (
+                            <span style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                              Password Change Req.
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#10b981' }}>
+                              Verified
+                            </span>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          {u.id !== user?.id && (
+                            <button
+                              className={`btn btn-xs ${u.is_active ? 'btn-danger' : 'btn-secondary'}`}
+                              onClick={() => handleToggleActive(u)}
+                              style={{ fontSize: '11px', padding: '3px 8px' }}
+                            >
+                              {u.is_active ? 'Deactivate' : 'Activate'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
-      </div>
+      </main>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={loadUsers} />}
     </div>
@@ -283,16 +490,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       onClose={onClose}
       footer={
         <>
-          <button
-            className="btn"
-            style={{
-              background: 'rgba(13, 148, 136, 0.15)',
-              border: '1px solid #0d9488',
-              color: '#14b8a6',
-              fontWeight: 600,
-            }}
-            onClick={onClose}
-          >
+          <button className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
           <button
@@ -306,7 +504,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       }
     >
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>Account Username</label>
+        <label>Account Username</label>
         <input
           type="text"
           value={data.username}
@@ -317,7 +515,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       </div>
 
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>Email Address</label>
+        <label>Email Address</label>
         <input
           type="email"
           value={data.email}
@@ -327,7 +525,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       </div>
 
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>System Hierarchy Role</label>
+        <label>System Hierarchy Role</label>
         <select
           value={data.role}
           onChange={(e) => setData({ ...data, role: e.target.value as any })}
@@ -339,7 +537,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       </div>
 
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>Initial Passphrase</label>
+        <label>Initial Passphrase</label>
         <input
           type="text"
           value={data.password}

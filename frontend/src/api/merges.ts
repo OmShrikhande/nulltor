@@ -19,7 +19,8 @@ export interface MergeRequestRead {
 export interface MergeSnapshotResponse {
   merge_request_id: string;
   pre_merge_snapshot: string | null;
-  source_snapshot: string | null;
+  target_snapshot: string | null;
+  target_updated_at: string | null;
 }
 
 export const mergesApi = {

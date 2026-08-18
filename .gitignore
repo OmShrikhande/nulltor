@@ -32,8 +32,8 @@ desktop.ini
 # Snapshots (persisted in PostgreSQL, not on disk)
 snapshots/
 
-# Python cache files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# # Python cache files
+# __pycache__/
+# *.pyc
+# *.pyo
+# *.pyd

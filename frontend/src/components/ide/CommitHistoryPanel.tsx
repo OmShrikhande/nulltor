@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { commitsApi, type CommitResponse } from '../../api/commits';
-import { History, GitCommit, Undo2, FileText } from 'lucide-react';
+import { History, GitCommit, FileText } from 'lucide-react';
 import { DiffViewerModal } from './DiffViewerModal';
 import { toast } from '../shared/Toast';
-import * as Y from 'yjs';
 
 interface CommitHistoryPanelProps {
   projectId: string;

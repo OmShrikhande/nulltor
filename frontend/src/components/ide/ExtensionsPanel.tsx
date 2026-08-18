@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Blocks, Check, Download, Star, X, Sparkles } from 'lucide-react';
+import { Search, Blocks, Check, Download, X } from 'lucide-react';
 
 interface ExtensionItem {
   id: string;

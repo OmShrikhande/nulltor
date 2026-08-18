@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Replace, ChevronRight, ChevronDown, FileText, X } from 'lucide-react';
+import { Search, ChevronDown, FileText, X } from 'lucide-react';
 import type { DirectoryNode } from '../../api/directories';
 
 interface SearchPanelProps {
