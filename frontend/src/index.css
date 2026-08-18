@@ -145,12 +145,59 @@ html, body, #root {
   width: 100%;
   overflow: hidden;
   font-family: var(--font-ui);
-  background: var(--bg-0);
+  background: transparent;
   color: var(--text-primary);
   font-size: 13.5px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Global Background & Animations */
+.global-bg-wrapper {
+  position: fixed;
+  inset: -20px;
+  background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: -2;
+  animation: bgPan 30s infinite alternate ease-in-out;
+}
+
+.global-bg-wrapper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 13, 22, 0.3);
+  backdrop-filter: blur(4px);
+  z-index: -1;
+}
+
+@keyframes bgPan {
+  0% { transform: scale(1.05) translate(0, 0); }
+  100% { transform: scale(1.1) translate(-2%, 2%); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hover-float {
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.4s ease;
+}
+.hover-float:hover {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 15px 35px rgba(37, 99, 235, 0.25);
 }
 
 a { color: inherit; text-decoration: none; }
@@ -360,7 +407,8 @@ button[data-testid="webchat-launcher"],
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: var(--bg-0);
+  background: transparent;
+  position: relative;
 }
 
 .main-content {
@@ -369,7 +417,9 @@ button[data-testid="webchat-launcher"],
   flex-direction: column;
   height: 100vh;
   overflow-y: auto;
-  background: var(--bg-0);
+  background: transparent;
+  position: relative;
+  z-index: 10;
 }
 
 .page-container {
@@ -746,19 +796,19 @@ body::before {
 .floating-word {
   position: absolute;
   font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 15px;
-  color: #01EFAC;
-  opacity: 0.35;
-  animation: floatWord 8s infinite linear;
+  font-weight: 600;
+  font-size: 14px;
+  color: #34d399;
+  opacity: 0.15;
+  animation: floatWord 12s infinite linear;
   user-select: none;
   white-space: nowrap;
 }
 
-.floating-word:nth-child(2n) { color: #01CBAE; animation-duration: 9s; opacity: 0.35; }
-.floating-word:nth-child(3n) { color: #2082A6; animation-duration: 7s; opacity: 0.35; }
-.floating-word:nth-child(4n) { color: #524094; animation-duration: 10s; opacity: 0.35; }
-.floating-word:nth-child(5n) { color: #562A83; animation-duration: 8.5s; opacity: 0.35; }
+.floating-word:nth-child(2n) { color: #10b981; animation-duration: 14s; opacity: 0.12; }
+.floating-word:nth-child(3n) { color: #6ee7b7; animation-duration: 11s; opacity: 0.18; }
+.floating-word:nth-child(4n) { color: #059669; animation-duration: 15s; opacity: 0.1; }
+.floating-word:nth-child(5n) { color: #a7f3d0; animation-duration: 13s; opacity: 0.2; }
 
 @keyframes floatWord {
   0% {
@@ -1143,14 +1193,14 @@ body::before {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes scaleUp { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
-/* ─── Login Screen (Northern Lights Glow) ──────────────────────────────────── */
+/* ─── Login Screen (Dark Mode UI) ──────────────────────────────────── */
 .login-screen {
   width: 100vw;
   height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-0);
+  background: #121212;
   position: relative;
   overflow: hidden;
 }
@@ -1160,19 +1210,44 @@ body::before {
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
+  background: #1e1e1e;
+  border: 1px solid #2e2e2e;
   border-radius: var(--radius-xl);
   padding: 36px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   position: relative;
   z-index: 2;
   text-align: center;
 }
 
+.login-card .form-field {
+  text-align: left;
+}
+
+.login-card .form-field input {
+  background: #121212;
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.login-card .form-field input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: none;
+}
+
+.login-card .btn-primary {
+  background: #3b82f6; /* Vibrant blue */
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  margin-top: 10px;
+}
+.login-card .btn-primary:hover {
+  background: #2563eb;
+}
+
 .login-logo { margin-bottom: 20px; display: flex; justify-content: center; }
-.login-title { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
-.login-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
+.login-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: #fff; }
+.login-sub { font-size: 13px; color: #a1a1aa; margin-bottom: 32px; }
 
 /* ─── IDE Layout Styles ───────────────────────────────────────────── */
 

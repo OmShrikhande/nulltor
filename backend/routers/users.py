@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from core.database import get_db
 from core.security import get_password_hash
-from core.deps import get_current_user, require_superadmin, require_admin_or_superadmin, get_client_ip
+from core.deps import get_current_user, require_admin_or_superadmin, get_client_ip
 from models.user import User, UserRole
 from models.audit_log import AuditAction, ResourceType
 from schemas.user import UserCreate, UserRead, UserUpdate, UserList

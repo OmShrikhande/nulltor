@@ -233,6 +233,13 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   const openFile = useEditorStore((s) => s.openFile);
   const language = useEditorStore((s) => s.language);
 
+  // Guard: if the stored branch belongs to a different project (stale Zustand state
+  // from navigating between projects), clear it immediately so we don't send a
+  // wrong branch_id to the API and get "Branch not found" errors.
+  if (currentBranch && currentBranch.project_id !== projectId) {
+    setBranch(null);
+  }
+
   const [branches, setBranches] = useState<BranchRead[]>([]);
   const [editorValue, setEditorValue] = useState('');
   const [loading, setLoading] = useState(true);
@@ -486,11 +493,20 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         const savedPrivateBranchId = sessionStorage.getItem(`privatebranch-${projectId}`);
         if (savedPrivateBranchId) {
           const pb = bl.items.find(b => b.id === savedPrivateBranchId);
-          if (pb) defaultBranch = pb;
-          setSessionPrivateBranch(savedPrivateBranchId);
+          if (pb) {
+            defaultBranch = pb;
+            setSessionPrivateBranch(savedPrivateBranchId);
+          } else {
+            // Clean up stale or non-existent subroom branch ID from storage
+            sessionStorage.removeItem(`privatebranch-${projectId}`);
+            setSessionPrivateBranch(null);
+          }
         }
 
-        if (defaultBranch && !currentBranch) setBranch(defaultBranch);
+        // Always reset to the correct branch for THIS project.
+        // Without this, a stale currentBranch from a previous project would be
+        // sent to the API, causing "Branch not found" errors.
+        if (defaultBranch) setBranch(defaultBranch);
       } catch {
         toast('Failed to load project room', 'error');
         navigate('/dashboard');

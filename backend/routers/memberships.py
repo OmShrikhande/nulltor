@@ -1,4 +1,3 @@
-import uuid
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +5,6 @@ from sqlalchemy import select
 
 from core.database import get_db
 from core.deps import get_current_user, get_client_ip
-from core.security import get_password_hash
 from models.user import User, UserRole
 from models.project import Project
 from models.membership import Membership, MembershipRole

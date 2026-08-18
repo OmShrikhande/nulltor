@@ -3,12 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
 from core.database import get_db
-from core.security import verify_password, create_access_token
+from core.security import verify_password, create_access_token, get_password_hash
 from core.deps import get_current_user, get_client_ip
 from models.user import User
 from models.audit_log import AuditAction, ResourceType
 from schemas.user import LoginRequest, TokenResponse, UserRead, PasswordChangeRequest
-from core.security import verify_password, get_password_hash
 from services.audit_service import log_action
 
 router = APIRouter()

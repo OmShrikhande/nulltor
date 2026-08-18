@@ -82,10 +82,10 @@ export function DashboardPage() {
   return (
     <div className="app-shell">
       <Sidebar />
-      <div className="main-content">
+      <div className="main-content" style={{ zIndex: 10 }}>
         <div className="page-container">
           {/* Professional Header & Actions Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+          <div className="animate-fade-in-up stagger-1" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px', position: 'relative', zIndex: 10 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
@@ -150,9 +150,9 @@ export function DashboardPage() {
           </div>
 
           {/* Main Content Layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '20px', position: 'relative', zIndex: 10 }}>
             {/* Left Main Area (8 Cols) */}
-            <div style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="animate-fade-in-up stagger-2" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <section>
 
                 {loading ? (
@@ -173,16 +173,17 @@ export function DashboardPage() {
                   </div>
                 ) : (
                   <div className="projects-compact-grid">
-                    {filteredProjects.map((p) => (
-                      <ProjectCard
-                        key={p.id}
-                        project={p}
-                        branchCount={branchCounts[p.id] ?? 0}
-                        myRole={user?.role}
-                        currentUserId={user?.id}
-                        onDeleted={loadDashboardData}
-                        onUpdated={loadDashboardData}
-                      />
+                    {filteredProjects.map((p, idx) => (
+                      <div key={p.id} className="animate-fade-in-up hover-float" style={{ animationDelay: `${0.15 + (idx * 0.05)}s` }}>
+                        <ProjectCard
+                          project={p}
+                          branchCount={branchCounts[p.id] ?? 0}
+                          myRole={user?.role}
+                          currentUserId={user?.id}
+                          onDeleted={loadDashboardData}
+                          onUpdated={loadDashboardData}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -190,8 +191,8 @@ export function DashboardPage() {
             </div>
 
             {/* Right Sidebar Activity Audit Timeline Connected to Backend */}
-            <div style={{ gridColumn: 'span 4' }}>
-              <div className="glass-card" style={{ height: '100%' }}>
+            <div className="animate-fade-in-up stagger-3" style={{ gridColumn: 'span 4' }}>
+              <div className="glass-card hover-float" style={{ height: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
                   <h2 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
                     Real-Time Activity Audit

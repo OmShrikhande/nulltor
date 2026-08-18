@@ -1,6 +1,5 @@
 import asyncio
 import asyncpg
-import os
 
 async def migrate():
     print("Connecting to postgres to ensure 'NullTor_db' database exists...")

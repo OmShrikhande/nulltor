@@ -11,15 +11,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from core.config import settings
 from core.database import engine, AsyncSessionLocal, Base
 from core.security import get_password_hash
 
 # ── Import all models so Base.metadata knows about every table ────────────────
-from models import User, Project, Membership, Directory, AuditLog, Branch, BranchMember, MergeRequest  # noqa: F401
-from models.user import UserRole
+import models
+_ = models
+from models.user import User, UserRole
 from models.audit_log import AuditAction, ResourceType
 
 # ── Routers ───────────────────────────────────────────────────────────────────
@@ -110,8 +111,8 @@ async def lifespan(app: FastAPI):
         await _seed_superadmin(session)
 
     logger.info(
-        f"Nulltor API ready → http://0.0.0.0:8001  "
-        f"| Docs: http://localhost:8001/docs"
+        "Nulltor API ready → http://0.0.0.0:8001  "
+        "| Docs: http://localhost:8001/docs"
     )
 
     yield

@@ -7,12 +7,13 @@ import uuid
 import shutil
 import platform
 import tempfile
+import subprocess
 
 # Import winpty on Windows if available
 PTY = None
 if platform.system() == "Windows":
     try:
-        from winpty import PTY
+        from winpty import PTY  # type: ignore[import-not-found, import-untyped]
     except ImportError:
         PTY = None
 
@@ -72,71 +73,125 @@ async def terminal_websocket(websocket: WebSocket):
             await websocket.close()
             return
 
-        # 4. Windows PTY Execution (if winpty is installed)
-        if platform.system() == "Windows" and PTY is not None:
-            try:
-                pty = PTY(cols, rows)
-                cmdline = f'"{script_path}"' if language == "python" else f'"{script_path}"'
-                pty.spawn(app, cmdline=cmdline)
-            except Exception as e:
-                await websocket.send_text(f"\x1b[31mFailed to spawn PTY: {e}\x1b[0m\r\n")
-                await websocket.close()
-                return
-
-            async def read_from_pty():
+        # 4. Windows Execution
+        if platform.system() == "Windows":
+            if PTY is not None:
+                # Windows with winpty available
                 try:
-                    while pty.isalive():
-                        data = pty.read(blocking=False)
-                        if data:
-                            await websocket.send_text(data)
-                        else:
-                            await asyncio.sleep(0.01)
-                    while True:
-                        data = pty.read(blocking=False)
-                        if data:
-                            await websocket.send_text(data)
-                        else:
-                            break
-                except Exception:
-                    pass
-                finally:
+                    pty = PTY(cols, rows)
+                    cmdline = f'"{script_path}"' if language == "python" else f'"{script_path}"'
+                    pty.spawn(app, cmdline=cmdline)
+                except Exception as e:
+                    await websocket.send_text(f"\x1b[31mFailed to spawn PTY: {e}\x1b[0m\r\n")
+                    await websocket.close()
+                    return
+
+                async def read_from_pty():
                     try:
-                        await websocket.send_text("\r\n\x1b[32m[Process completed]\x1b[0m\r\n")
+                        while pty.isalive():
+                            data = pty.read(blocking=False)
+                            if data:
+                                await websocket.send_text(data)
+                            else:
+                                await asyncio.sleep(0.01)
+                        while True:
+                            data = pty.read(blocking=False)
+                            if data:
+                                await websocket.send_text(data)
+                            else:
+                                break
                     except Exception:
                         pass
-                    await asyncio.sleep(0.2)
+                    finally:
+                        try:
+                            await websocket.send_text("\r\n\x1b[32m[Process completed]\x1b[0m\r\n")
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.2)
+                        try:
+                            await websocket.close()
+                        except Exception:
+                            pass
+
+                async def write_to_pty():
                     try:
-                        await websocket.close()
+                        while pty.isalive():
+                            data = await websocket.receive_text()
+                            if data:
+                                if data.startswith('{') and ('"type": "resize"' in data or '"type":"resize"' in data):
+                                    try:
+                                        rcfg = json.loads(data)
+                                        pty.set_size(rcfg.get("cols", cols), rcfg.get("rows", rows))
+                                        continue
+                                    except Exception:
+                                        pass
+                                pty.write(data)
+                    except WebSocketDisconnect:
+                        pass
                     except Exception:
                         pass
 
-            async def write_to_pty():
-                try:
-                    while pty.isalive():
-                        data = await websocket.receive_text()
-                        if data:
-                            if data.startswith('{') and ('"type": "resize"' in data or '"type":"resize"' in data):
-                                try:
-                                    rcfg = json.loads(data)
-                                    pty.set_size(rcfg.get("cols", cols), rcfg.get("rows", rows))
-                                    continue
-                                except Exception:
-                                    pass
-                            pty.write(data)
-                except WebSocketDisconnect:
-                    pass
-                except Exception:
-                    pass
+                await asyncio.gather(read_from_pty(), write_to_pty())
+            else:
+                # Windows fallback without winpty: standard subprocess execution
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd_args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.PIPE,
+                    env=env,
+                )
 
-            await asyncio.gather(read_from_pty(), write_to_pty())
+                async def stream_output():
+                    try:
+                        if proc.stdout:
+                            while True:
+                                line = await proc.stdout.readline()
+                                if not line:
+                                    break
+                                text = line.decode('utf-8', errors='replace').replace('\n', '\r\n')
+                                await websocket.send_text(text)
+                    except Exception:
+                        pass
+                    finally:
+                        try:
+                            await websocket.send_text("\r\n\x1b[32m[Process completed]\x1b[0m\r\n")
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.2)
+                        try:
+                            await websocket.close()
+                        except Exception:
+                            pass
+
+                async def stream_input():
+                    try:
+                        while proc.returncode is None:
+                            data = await websocket.receive_text()
+                            if data and proc.stdin and not proc.stdin.is_closing():
+                                if not (data.startswith('{') and ('"type": "resize"' in data or '"type":"resize"' in data)):
+                                    proc.stdin.write(data.encode('utf-8'))
+                                    await proc.stdin.drain()
+                    except WebSocketDisconnect:
+                        pass
+                    except Exception:
+                        pass
+
+                await asyncio.gather(stream_output(), stream_input())
 
         else:
             # 5. POSIX PTY Execution (Linux / macOS)
-            import pty
-            import fcntl
-            import struct
-            import termios
-            import os
+            try:
+                import pty  # type: ignore[import-not-found]
+                import fcntl  # type: ignore[import-not-found]
+                import struct
+                import termios  # type: ignore[import-not-found]
+            except ImportError:
+                await websocket.send_text("\x1b[31mPOSIX PTY modules not available on this platform\x1b[0m\r\n")
+                await websocket.close()
+                return
 
             pid, fd = pty.fork()
             if pid == 0:
@@ -217,3 +272,4 @@ async def terminal_websocket(websocket: WebSocket):
                 os.remove(script_path)
         except Exception:
             pass
+

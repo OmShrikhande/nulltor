@@ -7,7 +7,6 @@ from sqlalchemy import select, func
 from core.database import get_db
 from core.deps import get_current_user, get_client_ip
 from models.user import User, UserRole
-from models.project import Project
 from models.membership import Membership, MembershipRole
 from models.branch import Branch, BranchMember, BranchType
 from models.audit_log import AuditAction, ResourceType
@@ -122,7 +121,7 @@ async def list_branches(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    membership = await _assert_project_membership(db, project_id, user)
+    await _assert_project_membership(db, project_id, user)
 
     q = select(Branch).where(Branch.project_id == project_id, Branch.is_active == True)
 
@@ -190,7 +189,7 @@ async def create_branch(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    membership = await _assert_project_membership(db, project_id, user)
+    await _assert_project_membership(db, project_id, user)
 
     # Permission check
     if payload.type == BranchType.main:
@@ -282,11 +281,13 @@ async def create_branch(
                     for cp in copy_params:
                         await db.execute(
                             text("""
-                                INSERT OR REPLACE INTO file_snapshots (file_id, branch_id, data, updated_at)
+                                INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
                                 SELECT :new_id, :new_branch, data, CURRENT_TIMESTAMP
                                 FROM file_snapshots
                                 WHERE file_id = :old_id AND (branch_id = :old_branch OR branch_id = 'main')
                                 ORDER BY updated_at DESC LIMIT 1
+                                ON CONFLICT (file_id, branch_id) DO UPDATE
+                                SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
                             """),
                             cp
                         )
@@ -412,7 +413,7 @@ async def add_branch_member(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    membership = await _assert_project_membership(db, project_id, user)
+    await _assert_project_membership(db, project_id, user)
 
     result = await db.execute(
         select(Branch).where(Branch.id == branch_id, Branch.project_id == project_id)
