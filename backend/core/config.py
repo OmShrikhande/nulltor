@@ -1,5 +1,8 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import List
+
+_ENV_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 
 class Settings(BaseSettings):
@@ -35,7 +38,8 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
 
-    model_config = {"env_file": "../.env", "extra": "ignore"}
+    model_config = {"env_file": (_ENV_FILE, ".env", "../.env"), "extra": "ignore"}
 
 
 settings = Settings()
+
