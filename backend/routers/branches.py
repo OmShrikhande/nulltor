@@ -287,11 +287,7 @@ async def create_branch(
                                 WHERE file_id = :old_id AND (branch_id = :old_branch OR branch_id = 'main')
                                 ORDER BY updated_at DESC LIMIT 1
                                 ON CONFLICT (file_id, branch_id) DO UPDATE
-<<<<<<< HEAD
                                 SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
-=======
-                                SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
->>>>>>> 7ecaffc6495e6a1b30bfcf3a0d78d968678245a4
                             """),
                             cp
                         )

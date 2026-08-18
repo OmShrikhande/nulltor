@@ -57,7 +57,7 @@ const FLOATING_WORDS = [
 
 function VideoPlayer({ stream, muted = false, autoPlay = true, controls = false, style }: { stream: MediaStream | null, muted?: boolean, autoPlay?: boolean, controls?: boolean, style?: React.CSSProperties }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  
+
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
@@ -139,9 +139,9 @@ function PassphraseModal({
             />
           </div>
           <div className="form-field" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input 
-              type="checkbox" 
-              id="private-mode-check" 
+            <input
+              type="checkbox"
+              id="private-mode-check"
               checked={isPrivate}
               onChange={(e) => setIsPrivate(e.target.checked)}
               style={{ width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
@@ -273,7 +273,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   });
 
   const { localStream, remoteStreams, isMuted, isVideoActive, startCall, toggleMute, leaveCall } = useWebRTC(
-    socket, 
+    socket,
     `${openFile?.id ?? '__none__'}::${currentBranch?.id || 'main'}`
   );
 
@@ -497,7 +497,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             defaultBranch = pb;
             setSessionPrivateBranch(savedPrivateBranchId);
           } else {
-<<<<<<< HEAD
             sessionStorage.removeItem(`privatebranch-${projectId}`);
             setSessionPrivateBranch(null);
           }
@@ -505,17 +504,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           setSessionPrivateBranch(null);
         }
 
-=======
-            // Clean up stale or non-existent subroom branch ID from storage
-            sessionStorage.removeItem(`privatebranch-${projectId}`);
-            setSessionPrivateBranch(null);
-          }
-        }
-
-        // Always reset to the correct branch for THIS project.
-        // Without this, a stale currentBranch from a previous project would be
-        // sent to the API, causing "Branch not found" errors.
->>>>>>> 7ecaffc6495e6a1b30bfcf3a0d78d968678245a4
         if (defaultBranch) setBranch(defaultBranch);
       } catch {
         toast('Failed to load project room', 'error');
@@ -658,7 +646,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   // Load pending merge count for admin badge
   useEffect(() => {
     if (!projectId || !canReview) return;
-    mergesApi.list(projectId, 'pending').then((data) => setPendingMergeCount(data.length)).catch(() => {});
+    mergesApi.list(projectId, 'pending').then((data) => setPendingMergeCount(data.length)).catch(() => { });
   }, [projectId, canReview]);
 
   if (loading) {
@@ -852,9 +840,9 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
           <button className="theme-toggle-btn" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>
             {theme === 'dark' ? (
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
             ) : (
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
             )}
           </button>
         </div>
@@ -862,11 +850,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
       {/* Main Multi-Pane Body */}
       <div className="ide-body">
-        <ActivityBar 
-          activeTab={activeTab} 
+        <ActivityBar
+          activeTab={activeTab}
           onChangeTab={(tab) => {
             setActiveTab(tab);
-          }} 
+          }}
           onBotClick={toggleBotpressChat}
           onProfileClick={() => navigate('/profile')}
           onSettingsClick={() => navigate('/settings')}
@@ -882,7 +870,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             />
           )}
           {activeTab === 'search' && (
-            <SearchPanel 
+            <SearchPanel
               tree={tree}
               onOpenFile={(file) => {
                 const e = useEditorStore.getState();
@@ -918,11 +906,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
                   const uint8Array = new Uint8Array(atob(snapshotBase64).split('').map(c => c.charCodeAt(0)));
                   const tempDoc = new Y.Doc();
                   Y.applyUpdate(tempDoc, uint8Array);
-                  
+
                   let restoredText = '';
                   if (tempDoc.getText('content').length > 0) restoredText = tempDoc.getText('content').toString();
                   else if (tempDoc.getText('monaco').length > 0) restoredText = tempDoc.getText('monaco').toString();
-                  
+
                   if (restoredText) {
                     text.delete(0, text.length);
                     text.insert(0, restoredText);
@@ -1061,7 +1049,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               {/* WebRTC Video Window */}
               <div style={{ flexShrink: 0, marginTop: '12px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 {!isVideoActive ? (
-                  <div 
+                  <div
                     onClick={startCall}
                     style={{ height: '110px', background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', cursor: 'pointer', transition: 'background 0.2s' }}
                     onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-3)'}
