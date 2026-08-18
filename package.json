@@ -10,7 +10,9 @@
     "start": "concurrently -n \"FASTAPI,GATEWAY\" -c \"cyan,magenta\" \"node run_backend.js\" \"node index.js\"",
     "dev:frontend": "cd frontend && npm run dev",
     "dev": "concurrently -n \"BACKEND,GATEWAY,VITE\" -c \"cyan,magenta,green\" \"node run_backend.js\" \"nodemon index.js\" \"cd frontend && npm run dev\"",
-    "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3330,3000,8001 -ErrorAction SilentlyContinue | ForEach-Object { if ($_.OwningProcess) { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }; Write-Host 'Ports 3330, 3000, and 8001 cleared.'\""
+    "docker:dev": "docker-compose -f docker-compose.dev.yml up --build",
+    "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3330,3000,8001 -ErrorAction SilentlyContinue | ForEach-Object { if ($_.OwningProcess) { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }; Write-Host 'Ports 3330, 3000, and 8001 cleared.'\"",
+    "setup": "node setup.js"
   },
   "keywords": [],
   "author": "",

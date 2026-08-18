@@ -18,6 +18,18 @@ if platform.system() == "Windows":
 
 router = APIRouter()
 
+def _check_docker_available() -> bool:
+    if os.getenv("USE_DOCKER_SANDBOX", "false").lower() != "true":
+        return False
+    docker_bin = shutil.which("docker") or shutil.which("docker.exe")
+    if not docker_bin:
+        return False
+    try:
+        res = subprocess.run(["docker", "info"], capture_output=True, timeout=1.2)
+        return res.returncode == 0
+    except Exception:
+        return False
+
 
 @router.websocket("/ws/terminal")
 async def terminal_websocket(websocket: WebSocket):

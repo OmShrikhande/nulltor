@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # AI Agent (Groq)
     GROQ_API_KEY: str = ""
     AI_BASE_URL: str = "https://api.groq.com/openai/v1"
-    AI_MODEL: str = "llama-3.3-70b-versatile"
+    AI_MODEL: str = "openai/gpt-oss-120b"
 
     @property
     def allowed_origins_list(self) -> List[str]:
