@@ -41,4 +41,13 @@ export const aiApi = {
     language?: string;
     action?: string;
   }) => post<{ code: string; explanation?: string }>('/ai/generate', payload),
+
+  complete: (payload: {
+    prefix: string;
+    suffix?: string;
+    language?: string;
+    api_key?: string;
+    model?: string;
+    base_url?: string;
+  }) => post<{ suggestion: string }>('/ai/complete', payload),
 };

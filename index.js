@@ -234,6 +234,9 @@ const roomMembers = new Map();
 const peerInfo = new Map();
 // Maps socket.id -> timestamp
 const lastUpdateAt = new Map();
+// In-memory last-snapshot cache: roomKey -> encryptedPayload
+// Updated on every y-snapshot event so reconnecting peers get instant state
+const lastSnapshotCache = new Map();
 
 function broadcastPresence(fileId) {
     const members = roomMembers.get(fileId);
@@ -327,17 +330,29 @@ io.on("connection", (socket) => {
         if (!payload || typeof payload !== "string") return;
         if (payload.length > MAX_UPDATE_SIZE) return;
 
+        // Keep in-memory cache hot for instant reconnect delivery
+        lastSnapshotCache.set(info.fileId, payload);
         await saveSnapshot(info.rawFileId || info.fileId, info.branchId || 'main', payload);
     });
 
     socket.on("request-sync", async () => {
         const info = peerInfo.get(socket.id);
         if (!info) return;
-        
-        const snap = await loadSnapshot(info.fileId);
+
+        // 1. Try in-memory cache first (fastest — covers reconnect within same server session)
+        const cached = lastSnapshotCache.get(info.fileId);
+        if (cached) {
+            socket.emit("sync-response", { snapshot: cached });
+            return;
+        }
+
+        // 2. Load from DB using rawFileId + branchId (not the composite room key)
+        const snap = await loadSnapshot(info.rawFileId || info.fileId, info.branchId || 'main');
         if (snap) {
+            lastSnapshotCache.set(info.fileId, snap); // warm the cache
             socket.emit("sync-response", { snapshot: snap });
         } else {
+            // 3. Ask a live peer to offer their state
             socket.to(info.fileId).emit("sync-needed", { requesterId: socket.id });
         }
     });
@@ -407,6 +422,8 @@ io.on("connection", (socket) => {
             if (members) {
                 members.delete(socket.id);
                 if (members.size === 0) {
+                    // Room is now empty — keep lastSnapshotCache alive but clear roomMembers
+                    // so next joiner still gets the snapshot from cache/DB
                     roomMembers.delete(info.fileId);
                 } else {
                     broadcastPresence(info.fileId);
@@ -452,9 +469,54 @@ server.on("error", (err) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
+    const os = require("os");
+    // Detect best LAN IP for display
+    let lanIp = "0.0.0.0";
+    try {
+        const nets = os.networkInterfaces();
+        for (const name of Object.keys(nets)) {
+            for (const net of nets[name]) {
+                if (net.family === "IPv4" && !net.internal) {
+                    lanIp = net.address;
+                    break;
+                }
+            }
+            if (lanIp !== "0.0.0.0") break;
+        }
+    } catch (_) {}
+
     console.log(`\n======================================================`);
     console.log(`  NULLTOR SECURE COLLABORATIVE PLATFORM READY`);
     console.log(`  Unified Single-Port Access: http://localhost:${PORT}`);
-    console.log(`  On your Local Network:     http://0.0.0.0:${PORT}`);
+    console.log(`  On your Local Network:     http://${lanIp}:${PORT}`);
+    console.log(`  mDNS (zero-config):        http://nulltor.local:${PORT}`);
     console.log(`======================================================\n`);
+
+    // ── mDNS / Bonjour LAN Discovery ─────────────────────────────────────
+    // Advertise nulltor.local so other LAN devices can find the server
+    // without needing to know the host IP address.
+    try {
+        const mdns = require("multicast-dns")();
+        const localIp = lanIp;
+        mdns.on("query", (query) => {
+            for (const question of query.questions) {
+                if (
+                    question.name === "nulltor.local" ||
+                    question.name === "nulltor.local."
+                ) {
+                    mdns.respond([
+                        {
+                            name: "nulltor.local",
+                            type: "A",
+                            ttl: 300,
+                            data: localIp,
+                        },
+                    ]);
+                }
+            }
+        });
+        console.log(`[mDNS] Advertising nulltor.local → ${localIp}:${PORT}`);
+    } catch (e) {
+        console.warn(`[mDNS] Disabled (run: npm install multicast-dns): ${e.message}`);
+    }
 });

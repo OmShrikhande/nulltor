@@ -68,14 +68,13 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
       <div className="login-glow" />
 
-      <div className="login-card">
-        <div className="login-logo">
-          <NulltorLogo size="lg" />
+      <div className="login-card glass-card" style={{ padding: '32px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div className="login-logo" style={{ marginBottom: '8px' }}>
+          <NulltorLogo size="xl" />
         </div>
-        <h1 className="login-title">Nulltor Enterprise</h1>
-        <p className="login-sub">Sign in to your Collaborative Nexus Workspace</p>
+        <p className="login-sub" style={{ marginBottom: '24px' }}>Sign in to your Collaborative Nexus Workspace</p>
 
-        <form className="login-form" onSubmit={handleSubmit}>
+        <form className="login-form" onSubmit={handleSubmit} style={{ width: '100%' }}>
           <div className="form-field">
             <label htmlFor="login-email">Email or Username</label>
             <input

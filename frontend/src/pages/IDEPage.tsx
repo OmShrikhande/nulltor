@@ -89,11 +89,52 @@ function VideoPlayer({ stream, muted = false, autoPlay = true, controls = false,
 
 function PassphraseModal({
   onSubmit,
+  projectId,
 }: {
   onSubmit: (key: string, isPrivate: boolean) => void;
+  projectId: string;
 }) {
   const [key, setKey] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = key.trim();
+    if (!trimmed) return;
+    setError(null);
+    setIsVerifying(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/verify-passphrase`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('nulltor_token')}`,
+        },
+        body: JSON.stringify({ passphrase: trimmed }),
+      });
+      if (res.status === 403) {
+        setError('❌ Incorrect room passphrase. Access denied.');
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.detail || 'Verification failed. Please try again.');
+        return;
+      }
+      const data = await res.json();
+      if (data.status === 'set') {
+        // This user just set the passphrase for the first time
+      }
+      onSubmit(trimmed, isPrivate);
+    } catch (err) {
+      setError('Network error. Could not verify passphrase. Is the server running?');
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
   return (
     <div className="login-screen">
       <div className="floating-words-bg">
@@ -117,13 +158,7 @@ function PassphraseModal({
           Enter the project room passphrase to initialize real-time zero-knowledge E2EE collaboration.
         </p>
 
-        <form
-          className="login-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (key.trim()) onSubmit(key.trim(), isPrivate);
-          }}
-        >
+        <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-field">
             <label htmlFor="passphrase-input" style={{ color: '#0d9488', fontWeight: 700 }}>
               Project Room Key
@@ -132,12 +167,20 @@ function PassphraseModal({
               id="passphrase-input"
               type="password"
               value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder="e.g. room-passphrase-123"
+              onChange={(e) => { setKey(e.target.value); setError(null); }}
+              placeholder="Enter the room passphrase"
               autoFocus
               required
+              disabled={isVerifying}
             />
           </div>
+
+          {error && (
+            <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: '8px', color: '#f87171', fontSize: '13px', fontWeight: 600 }}>
+              {error}
+            </div>
+          )}
+
           <div className="form-field" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input
               type="checkbox"
@@ -150,8 +193,8 @@ function PassphraseModal({
               Launch in Private Subroom (Isolate edits)
             </label>
           </div>
-          <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
-            <Rocket size={14} /> Launch Project Session & IDE
+          <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '16px' }} disabled={isVerifying}>
+            {isVerifying ? 'Verifying…' : <><Rocket size={14} /> Launch Project Session & IDE</>}
           </button>
         </form>
       </div>
@@ -208,6 +251,7 @@ export function IDEPage() {
     return (
       <PassphraseModal
         onSubmit={handlePassphraseSubmit}
+        projectId={projectId!}
       />
     );
   }
@@ -622,7 +666,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     }
     useEditorStore.getState().setFile(null); // Clear open file so it doesn't query a mismatched ID
     toast(`Switched to ${branch.type.toUpperCase()} room: ${branch.name}`, 'info');
-    refreshTree();
   }
 
   async function handleBranchRefresh() {
@@ -639,7 +682,6 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
       setBranch(mainB);
       useEditorStore.getState().setFile(null); // Clear mismatched file ID
       toast('Switched to shared main room with write access.', 'success');
-      refreshTree();
     }
   }
 
@@ -1189,8 +1231,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           passphrase={passphrase}
           onClose={() => setShowMergeReview(false)}
           onMerged={async () => {
-            await refreshTree();
-            await handleBranchRefresh();
+            refreshTree();
+            useEditorStore.getState().setFile(null);
           }}
         />
       )}

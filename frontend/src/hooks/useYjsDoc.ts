@@ -73,12 +73,20 @@ export function useYjsDoc({
     const newDoc = new Y.Doc();
     setDoc(newDoc);
 
-    // Connect to Node.js Socket.IO server
-    const socket = io('/', { path: '/socket.io', transports: ['websocket'] });
+    // Connect to Node.js Socket.IO server with explicit reconnection settings
+    const socket = io('/', {
+      path: '/socket.io',
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 8000,
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
       setIsConnected(true);
+      // Re-join and re-sync on every connect (covers reconnects after drops)
       socket.emit('join-file', { fileId, branchId });
     });
 

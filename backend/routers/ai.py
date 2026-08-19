@@ -529,3 +529,68 @@ async def run_agent(
         code_modifications=code_modifications,
         new_files=new_files
     )
+
+
+# ── Inline Completion Endpoint (ghost-text autocomplete) ──────────────────────
+
+class CompletionRequest(BaseModel):
+    prefix: str                    # Code before the cursor (last N lines)
+    suffix: Optional[str] = ""    # Code after the cursor (next few lines)
+    language: Optional[str] = "python"
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+
+class CompletionResponse(BaseModel):
+    suggestion: str  # Text to insert at cursor position
+
+
+@router.post("/complete", response_model=CompletionResponse)
+async def inline_complete(
+    req: CompletionRequest,
+    user: User = Depends(get_current_user),
+):
+    """Lightweight single-turn completion for Monaco ghost-text inline suggestions."""
+    api_key = req.api_key or settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return CompletionResponse(suggestion="")
+
+    base_url = req.base_url or settings.AI_BASE_URL or os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
+    model = req.model or settings.AI_MODEL or os.getenv("AI_MODEL", "openai/gpt-oss-120b")
+
+    # Truncate prefix to last 50 lines to stay within token budget
+    prefix_lines = req.prefix.splitlines()[-50:]
+    prefix_trimmed = "\n".join(prefix_lines)
+    suffix_trimmed = (req.suffix or "")[:200]
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"You are an expert {req.language} code completion engine embedded in an IDE. "
+                "Output ONLY the completion text to insert at the cursor — no explanation, no markdown, "
+                "no triple-backticks, no comments. If no meaningful completion exists, output an empty string."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"<prefix>\n{prefix_trimmed}\n</prefix>\n"
+                f"<suffix>\n{suffix_trimmed}\n</suffix>\n"
+                "Complete the code at the cursor position. Output only the text to insert."
+            ),
+        },
+    ]
+
+    try:
+        resp = _call_llm_api(base_url, api_key, model, messages, tools=None)
+        suggestion = resp["choices"][0]["message"].get("content", "").strip()
+        # Strip any accidental markdown fences
+        if suggestion.startswith("```"):
+            lines = suggestion.splitlines()
+            suggestion = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        return CompletionResponse(suggestion=suggestion)
+    except Exception as e:
+        print("Inline completion error:", e)
+        return CompletionResponse(suggestion="")

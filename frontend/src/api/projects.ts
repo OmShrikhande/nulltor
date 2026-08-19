@@ -12,6 +12,7 @@ export interface ProjectRead {
   invite_code: string | null;
   invite_role: string;
   is_active: boolean;
+  passphrase_set?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +20,29 @@ export interface ProjectRead {
 export interface ProjectList {
   total: number;
   items: ProjectRead[];
+}
+
+export interface SnapshotItem {
+  file_id: string;
+  branch_id: string;
+  data: string;
+}
+
+export interface CommitItem {
+  id: string;
+  snapshot: string;
+}
+
+export interface EncryptedDataResponse {
+  snapshots: SnapshotItem[];
+  commits: CommitItem[];
+}
+
+export interface PassphraseMigrate {
+  old_passphrase: string;
+  new_passphrase: string;
+  new_snapshots: SnapshotItem[];
+  new_commits: CommitItem[];
 }
 
 export const projectsApi = {
@@ -40,4 +64,13 @@ export const projectsApi = {
 
   regenerateCode: (id: string, invite_role?: string) =>
     post<ProjectRead>(`/projects/${id}/regenerate-code`, { invite_role }),
+
+  resetPassphrase: (id: string, passphrase: string) =>
+    post<{ status: string; message: string }>(`/projects/${id}/reset-passphrase`, { passphrase }),
+
+  getEncryptedData: (id: string) =>
+    get<EncryptedDataResponse>(`/projects/${id}/encrypted-data`),
+
+  migratePassphrase: (id: string, payload: PassphraseMigrate) =>
+    post<ProjectRead>(`/projects/${id}/migrate-passphrase`, payload),
 };

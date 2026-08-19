@@ -34,6 +34,8 @@ class Project(Base):
     )
     # AES salt set when the first Socket.IO room is created for this project
     room_salt: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # bcrypt hash of the room passphrase — set on first use, verified on every join
+    passphrase_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Invite code for join-by-code feature (8-char, regeneratable)
     invite_code: Mapped[str] = mapped_column(String(16), nullable=False, default=_generate_invite_code, unique=True, index=True)
     # Role granted to new members who join via the invite code

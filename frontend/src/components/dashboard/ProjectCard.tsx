@@ -5,7 +5,8 @@ import { useProjectStore } from '../../store/projectStore';
 import { Modal } from '../shared/Modal';
 import { MembersModal } from './MembersModal';
 import { toast } from '../shared/Toast';
-import { Folder, GitBranch, Users, Trash2, Key, Copy, RefreshCw } from 'lucide-react';
+import { Folder, GitBranch, Users, Trash2, Key, Copy, RefreshCw, ShieldCheck } from 'lucide-react';
+import CryptoJS from 'crypto-js';
 
 interface ProjectCardProps {
   project: ProjectRead;
@@ -24,10 +25,18 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
   const [regenLoading, setRegenLoading] = useState(false);
   const [status, setStatus] = useState<ProjectStatus>((project.status as ProjectStatus) || 'live');
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [showResetPassphrase, setShowResetPassphrase] = useState(false);
+  const [resetMode, setResetMode] = useState<'migrate' | 'force'>('migrate');
+  const [oldPassphrase, setOldPassphrase] = useState('');
+  const [newPassphrase, setNewPassphrase] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState('');
   const setProject = useProjectStore((s) => s.setProject);
 
-  // Only the creator (owner) and super admins can see/manage the invite code
-  const canSeeInviteCode = project.owner_id === currentUserId || myRole === 'superadmin';
+  // Only the creator (owner), admins, and superadmins can see/manage the invite code
+  const canSeeInviteCode = project.owner_id === currentUserId || myRole === 'superadmin' || myRole === 'admin';
+  // Admin and superadmin can reset the passphrase
+  const canResetPassphrase = myRole === 'superadmin' || myRole === 'admin';
 
   async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
@@ -69,6 +78,86 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
       toast(err.message || 'Failed to regenerate code', 'error');
     } finally {
       setRegenLoading(false);
+    }
+  }
+
+  async function handleResetPassphrase(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newPassphrase.trim()) return;
+    if (resetMode === 'migrate' && !oldPassphrase.trim()) {
+      toast('Old passphrase is required for migration', 'error');
+      return;
+    }
+    
+    setResetLoading(true);
+    setMigrationStatus('');
+    try {
+      if (resetMode === 'force') {
+        await projectsApi.resetPassphrase(project.id, newPassphrase.trim());
+        Object.keys(sessionStorage)
+          .filter(k => k === `roomkey-${project.id}`)
+          .forEach(k => sessionStorage.removeItem(k));
+        toast('Force reset complete. All data was wiped.', 'success');
+      } else {
+        setMigrationStatus('Fetching encrypted data...');
+        const { snapshots, commits } = await projectsApi.getEncryptedData(project.id);
+        
+        setMigrationStatus('Re-encrypting snapshots...');
+        const PBKDF2_ITERATIONS = 10000;
+        const KEY_SIZE = 256 / 32;
+        
+        // Derive old and new keys
+        const oldKey = CryptoJS.PBKDF2(oldPassphrase.trim(), 'nulltor-static-salt-v1', { keySize: KEY_SIZE, iterations: PBKDF2_ITERATIONS });
+        const newKey = CryptoJS.PBKDF2(newPassphrase.trim(), 'nulltor-static-salt-v1', { keySize: KEY_SIZE, iterations: PBKDF2_ITERATIONS });
+        
+        const decrypt = (ciphertext: string) => {
+          const [ivHex, data] = ciphertext.split(':');
+          if (!ivHex || !data) throw new Error('Invalid ciphertext format');
+          const iv = CryptoJS.enc.Hex.parse(ivHex);
+          const decrypted = CryptoJS.AES.decrypt(data, oldKey, { iv });
+          if (decrypted.sigBytes < 0) throw new Error('Decryption failed');
+          return decrypted.toString(CryptoJS.enc.Utf8);
+        };
+        
+        const encrypt = (plaintext: string) => {
+          const iv = CryptoJS.lib.WordArray.random(128 / 8);
+          const encrypted = CryptoJS.AES.encrypt(plaintext, newKey, { iv });
+          return iv.toString() + ':' + encrypted.toString();
+        };
+
+        const new_snapshots = snapshots.map(s => ({
+          ...s,
+          data: encrypt(decrypt(s.data))
+        }));
+        
+        setMigrationStatus('Re-encrypting commits...');
+        const new_commits = commits.map(c => ({
+          ...c,
+          snapshot: encrypt(decrypt(c.snapshot))
+        }));
+        
+        setMigrationStatus('Uploading migrated data...');
+        await projectsApi.migratePassphrase(project.id, {
+          old_passphrase: oldPassphrase.trim(),
+          new_passphrase: newPassphrase.trim(),
+          new_snapshots,
+          new_commits
+        });
+        
+        // Update local storage key so the user stays authenticated seamlessly
+        sessionStorage.setItem(`roomkey-${project.id}`, newPassphrase.trim());
+        toast('Room passphrase migrated successfully! Data was preserved.', 'success');
+      }
+      
+      setShowResetPassphrase(false);
+      setNewPassphrase('');
+      setOldPassphrase('');
+      setMigrationStatus('');
+    } catch (err: any) {
+      toast(err.message || (resetMode === 'migrate' ? 'Failed to migrate data. Is the old passphrase correct?' : 'Failed to reset passphrase'), 'error');
+      setMigrationStatus('');
+    } finally {
+      setResetLoading(false);
     }
   }
 
@@ -153,7 +242,7 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
           )}
         </div>
 
-        {/* Invite Code Row - Strictly restricted to owner or superadmin */}
+        {/* Invite Code Row - Strictly restricted to owner, admin, or superadmin */}
         {canSeeInviteCode && (
           <div onClick={(e) => e.stopPropagation()} style={{ paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
             {showCode && currentCode ? (
@@ -179,6 +268,19 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
             )}
           </div>
         )}
+
+        {/* Settings Button - Admin & Superadmin only */}
+        {canResetPassphrase && (
+          <div onClick={(e) => e.stopPropagation()} style={{ paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', width: '100%', justifyContent: 'center', color: 'var(--text-secondary)' }}
+              onClick={() => setShowResetPassphrase(true)}
+            >
+              <ShieldCheck size={11} /> Project Settings
+            </button>
+          </div>
+        )}
       </div>
 
       {showMembers && (
@@ -187,6 +289,93 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
           projectName={project.name}
           onClose={() => setShowMembers(false)}
         />
+      )}
+
+      {/* Project Settings Modal */}
+      {showResetPassphrase && (
+        <Modal
+          title="⚙️ Project Settings"
+          onClose={() => { setShowResetPassphrase(false); setNewPassphrase(''); setOldPassphrase(''); setMigrationStatus(''); setResetMode('migrate'); }}
+          footer={
+            <>
+              <button className="btn" onClick={() => { setShowResetPassphrase(false); setNewPassphrase(''); setOldPassphrase(''); setMigrationStatus(''); setResetMode('migrate'); }}>Close</button>
+
+              <button className={`btn ${resetMode === 'force' ? 'btn-danger' : 'btn-primary'}`} onClick={handleResetPassphrase as any} disabled={resetLoading || !newPassphrase.trim() || (resetMode === 'migrate' && !oldPassphrase.trim())}>
+                {resetLoading ? 'Processing…' : (resetMode === 'force' ? 'Force Reset (Wipe Data)' : 'Migrate Data')}
+              </button>
+            </>
+          }
+        >
+          <div style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+            <h4 style={{ color: 'var(--danger)', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ShieldCheck size={14} /> Danger Zone: Manage Passphrase
+            </h4>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button
+                className={`btn btn-sm ${resetMode === 'migrate' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ flex: 1 }}
+                onClick={() => setResetMode('migrate')}
+                type="button"
+              >
+                Migrate (Preserve Data)
+              </button>
+              <button
+                className={`btn btn-sm ${resetMode === 'force' ? 'btn-danger' : 'btn-ghost'}`}
+                style={{ flex: 1 }}
+                onClick={() => setResetMode('force')}
+                type="button"
+              >
+                Force Reset (Wipe Data)
+              </button>
+            </div>
+            
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px', lineHeight: 1.6 }}>
+            {resetMode === 'migrate' ? (
+              <>
+                <strong style={{ color: '#10b981' }}>Migrate Data:</strong> Re-encrypts all files and commits using your old passphrase before applying the new one. <strong style={{ color: 'var(--text-primary)' }}>No data is lost.</strong>
+              </>
+            ) : (
+              <>
+                ⚠️ <strong style={{ color: '#f87171' }}>Force Reset:</strong> Immediately invalidates the current room passphrase. <strong style={{ color: '#f87171' }}>All encrypted files will be permanently wiped</strong> because they cannot be decrypted. Only use if the old passphrase is lost!
+              </>
+            )}
+          </p>
+          <form onSubmit={handleResetPassphrase}>
+            {resetMode === 'migrate' && (
+              <div className="form-field" style={{ marginBottom: '12px' }}>
+                <label style={{ color: '#0d9488', fontWeight: 700 }}>Current Passphrase (Required)</label>
+                <input
+                  type="password"
+                  value={oldPassphrase}
+                  onChange={(e) => setOldPassphrase(e.target.value)}
+                  placeholder="Enter the current passphrase…"
+                  autoFocus
+                  required
+                  disabled={resetLoading}
+                />
+              </div>
+            )}
+            <div className="form-field">
+              <label style={{ color: resetMode === 'force' ? '#f87171' : '#0d9488', fontWeight: 700 }}>New Room Passphrase</label>
+              <input
+                type="password"
+                value={newPassphrase}
+                onChange={(e) => setNewPassphrase(e.target.value)}
+                placeholder="Enter a strong new passphrase…"
+                autoFocus={resetMode === 'force'}
+                required
+                disabled={resetLoading}
+              />
+            </div>
+            {migrationStatus && (
+              <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--aurora-mint)', textAlign: 'center', fontWeight: 'bold' }}>
+                <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite', marginRight: '4px', verticalAlign: 'middle' }} />
+                {migrationStatus}
+              </div>
+            )}
+          </form>
+          </div>
+        </Modal>
       )}
     </>
   );

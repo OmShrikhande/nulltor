@@ -20,13 +20,11 @@ if platform.system() == "Windows":
 router = APIRouter()
 
 def _check_docker_available() -> bool:
-    if os.getenv("USE_DOCKER_SANDBOX", "false").lower() != "true":
-        return False
     docker_bin = shutil.which("docker") or shutil.which("docker.exe")
     if not docker_bin:
         return False
     try:
-        res = subprocess.run(["docker", "info"], capture_output=True, timeout=1.2)
+        res = subprocess.run(["docker", "info"], capture_output=True, timeout=5.0)
         return res.returncode == 0
     except Exception:
         return False
@@ -44,10 +42,19 @@ async def terminal_websocket(websocket: WebSocket):
         language = config.get("language", "python")
         cols = config.get("cols", 80)
         rows = config.get("rows", 24)
+        # Client-controlled flags (from Settings page)
+        use_docker_flag = bool(config.get("use_docker", False))
+        timeout_seconds_raw = int(config.get("timeout_seconds", 30))
+        if language == "python" and timeout_seconds_raw == 30:
+            timeout_seconds_raw = 120  # AI / ML imports take a very long time
+        timeout_seconds = max(5, min(timeout_seconds_raw, 300))
     except Exception as e:
         await websocket.send_text(f"\x1b[31mError receiving initialization data: {e}\x1b[0m\r\n")
         await websocket.close()
         return
+
+    # Determine whether to use Docker isolation
+    use_docker = use_docker_flag and _check_docker_available()
 
     # 2. Write code to OS system temp directory
     ext = ".py" if language == "python" else ".js" if language in ["javascript", "typescript"] else ".txt"
@@ -59,21 +66,110 @@ async def terminal_websocket(websocket: WebSocket):
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(code)
 
+    # Create script file
+
+
+
     try:
         # 3. Determine runtime command
         if language == "python":
             app = sys.executable or "python"
             cmd_args = [app, "-u", script_path]
+            docker_image = "nulltor-sandbox-python:latest"
+            docker_cmd = ["python", "-u", f"/code/{script_name}"]
         elif language in ["javascript", "typescript"]:
-            node_bin = shutil.which("node") or shutil.which("node.exe") or "node"
-            app = node_bin
-            cmd_args = [app, script_path]
+            tsx_bin = shutil.which("tsx") or shutil.which("tsx.cmd")
+            if tsx_bin:
+                app = tsx_bin
+                cmd_args = [app, script_path]
+            else:
+                npx_bin = shutil.which("npx") or shutil.which("npx.cmd") or "npx"
+                app = npx_bin
+                cmd_args = [app, "-y", "tsx", script_path]
+            docker_image = "nulltor-sandbox-node:latest"
+            docker_cmd = ["tsx", f"/code/{script_name}"]
         else:
             await websocket.send_text(f"\x1b[31mUnsupported language: {language}\x1b[0m\r\n")
             await websocket.close()
             return
 
-        # 4. Windows Execution
+        # 4a. Docker Sandbox Execution (when enabled and available)
+        if use_docker:
+            docker_bin = shutil.which("docker") or "docker"
+            full_cmd = [
+                docker_bin, "run", "--rm", "--interactive",
+                "--memory", "2g",
+                "--cpus", "2.0",
+                "--network", "none",
+                "--env", "TF_CPP_MIN_LOG_LEVEL=3",
+                "--env", "TF_ENABLE_ONEDNN_OPTS=0",
+                "--volume", f"{temp_dir}:/code:ro",
+                "--workdir", "/code",
+                docker_image,
+            ] + docker_cmd
+
+            import subprocess
+            env = os.environ.copy()
+            proc = subprocess.Popen(
+                full_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                env=env,
+            )
+
+            async def docker_stream_output():
+                try:
+                    if proc.stdout:
+                        while True:
+                            # Use asyncio.to_thread to read without blocking the event loop
+                            # This bypasses Uvicorn's SelectorEventLoop restrictions on Windows
+                            line = await asyncio.to_thread(proc.stdout.readline)
+                            if not line:
+                                break
+                            text = line.decode("utf-8", errors="replace").replace("\n", "\r\n")
+                            await websocket.send_text(text)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        await websocket.send_text("\r\n\x1b[32m[Container exited]\x1b[0m\r\n")
+                    except Exception:
+                        pass
+                    try:
+                        # Only print container exited if it hasn't timed out yet
+                        if proc.poll() is not None:
+                            await websocket.send_text("\r\n\x1b[32m[Container exited]\x1b[0m\r\n")
+                    except Exception:
+                        pass
+
+            async def docker_stream_input():
+                try:
+                    while proc.poll() is None:
+                        data = await websocket.receive_text()
+                        if data and proc.stdin and not proc.stdin.closed:
+                            if not (data.startswith('{') and ('"type": "resize"' in data or '"type":"resize"' in data)):
+                                proc.stdin.write(data.encode("utf-8"))
+                                proc.stdin.flush()
+                except Exception:
+                    pass
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(docker_stream_output(), docker_stream_input()),
+                    timeout=float(timeout_seconds)
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                try:
+                    await websocket.send_text(f"\r\n\x1b[31m[Timeout] Process killed after {timeout_seconds}s\x1b[0m\r\n")
+                    await websocket.close()
+                except Exception:
+                    pass
+            return  # Done — skip PTY paths below
+
+        # 4b. Windows Host PTY Execution
+
         if platform.system() == "Windows":
             if PTY is not None:
                 # Windows with winpty available
@@ -104,7 +200,8 @@ async def terminal_websocket(websocket: WebSocket):
                         pass
                     finally:
                         try:
-                            await websocket.send_text("\r\n\x1b[32m[Process completed]\x1b[0m\r\n")
+                            mode_str = "[Sandbox] Docker" if use_docker else "[Host] Local Execution"
+                            await websocket.send_text(f"\r\n\x1b[32m[Process completed] — {mode_str}\x1b[0m\r\n")
                         except Exception:
                             pass
                         await asyncio.sleep(0.2)
@@ -157,7 +254,8 @@ async def terminal_websocket(websocket: WebSocket):
                         pass
                     finally:
                         try:
-                            await websocket.send_text("\r\n\x1b[32m[Process completed]\x1b[0m\r\n")
+                            mode_str = "[Sandbox] Docker" if use_docker else "[Host] Local Execution"
+                            await websocket.send_text(f"\r\n\x1b[32m[Process completed] — {mode_str}\x1b[0m\r\n")
                         except Exception:
                             pass
                         await asyncio.sleep(0.2)

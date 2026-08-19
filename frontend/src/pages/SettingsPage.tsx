@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/shared/Sidebar';
-import { Settings, Type, AlignLeft, WrapText, Monitor, RotateCcw } from 'lucide-react';
+import { Settings, Type, AlignLeft, WrapText, Monitor, RotateCcw, Terminal, Clock } from 'lucide-react';
 
 const STORAGE_KEY = 'nulltor-editor-settings';
+const EXEC_STORAGE_KEY = 'nulltor-exec-settings';
 
 interface EditorSettings {
   fontSize: number;
@@ -12,6 +13,11 @@ interface EditorSettings {
   theme: 'dark' | 'light' | 'system';
   minimap: boolean;
   lineNumbers: boolean;
+}
+
+export interface ExecSettings {
+  dockerSandbox: boolean;
+  timeoutSeconds: number;
 }
 
 const defaults: EditorSettings = {
@@ -23,6 +29,11 @@ const defaults: EditorSettings = {
   lineNumbers: true,
 };
 
+const execDefaults: ExecSettings = {
+  dockerSandbox: false,
+  timeoutSeconds: 30,
+};
+
 export function loadEditorSettings(): EditorSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -31,13 +42,26 @@ export function loadEditorSettings(): EditorSettings {
   return defaults;
 }
 
+export function loadExecSettings(): ExecSettings {
+  try {
+    const raw = localStorage.getItem(EXEC_STORAGE_KEY);
+    if (raw) return { ...execDefaults, ...JSON.parse(raw) };
+  } catch {}
+  return execDefaults;
+}
+
 function save(settings: EditorSettings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+function saveExec(settings: ExecSettings) {
+  localStorage.setItem(EXEC_STORAGE_KEY, JSON.stringify(settings));
 }
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<EditorSettings>(loadEditorSettings);
+  const [execSettings, setExecSettings] = useState<ExecSettings>(loadExecSettings);
   const [saved, setSaved] = useState(false);
 
   function update<K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) {
@@ -50,9 +74,21 @@ export function SettingsPage() {
     setTimeout(() => setSaved(false), 1500);
   }
 
+  function updateExec<K extends keyof ExecSettings>(key: K, value: ExecSettings[K]) {
+    setExecSettings((prev) => {
+      const next = { ...prev, [key]: value };
+      saveExec(next);
+      return next;
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
   function resetAll() {
     save(defaults);
+    saveExec(execDefaults);
     setSettings(defaults);
+    setExecSettings(execDefaults);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -145,12 +181,50 @@ export function SettingsPage() {
                 <span>) {'{'}</span>{'\n'}
                 {'  '.repeat(settings.tabSize / 2)}
                 <span style={{ color: '#ff7b72' }}>return </span>
-                <span style={{ color: '#a5d6ff' }}>`Hello, ${'${'}name{'}'}`</span>
+                <span style={{ color: '#a5d6ff' }}>{`\`Hello, ${'${'}name{'}'}`}</span>
                 <span>;</span>{'\n'}
                 {'}'}
               </div>
             </SettingCard>
 
+          </div>
+
+          {/* Code Execution Section */}
+          <div style={{ marginTop: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <Terminal size={18} style={{ color: 'var(--aurora-blue)' }} />
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Code Execution</h2>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 20 }}>
+
+              <SettingCard icon={<Terminal size={18} />} title="Docker Sandbox" description="Run code inside an isolated Docker container instead of the host machine. Requires Docker to be installed and running.">
+                <ToggleSwitch
+                  value={execSettings.dockerSandbox}
+                  onChange={(v) => updateExec('dockerSandbox', v)}
+                  label={execSettings.dockerSandbox ? 'Enabled (Isolated)' : 'Disabled (Host)'}
+                />
+                {execSettings.dockerSandbox && (
+                  <div style={{ fontSize: 11, color: 'var(--aurora-mint)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--aurora-mint)', display: 'inline-block' }} />
+                    Code will execute in a sandboxed container
+                  </div>
+                )}
+              </SettingCard>
+
+              <SettingCard icon={<Clock size={18} />} title="Execution Timeout" description="Maximum seconds a code run can execute before being terminated.">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <input
+                    type="range" min={5} max={120} step={5} value={execSettings.timeoutSeconds}
+                    onChange={(e) => updateExec('timeoutSeconds', parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: 'var(--aurora-mint)' }}
+                  />
+                  <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--aurora-mint)', minWidth: 40, textAlign: 'right' }}>
+                    {execSettings.timeoutSeconds}s
+                  </span>
+                </div>
+              </SettingCard>
+
+            </div>
           </div>
 
           <div style={{ marginTop: 32, paddingTop: 20, borderTop: '1px solid var(--border)', display: 'flex', gap: 12 }}>

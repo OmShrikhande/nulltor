@@ -3,7 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
 from core.database import get_db
-from core.security import verify_password, create_access_token, get_password_hash
+from core.security import (
+    verify_password, create_access_token, create_refresh_token,
+    decode_refresh_token, get_password_hash
+)
 from core.deps import get_current_user, get_client_ip
 from models.user import User
 from models.audit_log import AuditAction, ResourceType
@@ -40,6 +43,10 @@ async def login(
         subject=str(user.id),
         extra_claims={"role": user.role.value, "username": user.username},
     )
+    refresh = create_refresh_token(
+        subject=str(user.id),
+        extra_claims={"role": user.role.value, "username": user.username},
+    )
 
     await log_action(
         db,
@@ -53,6 +60,7 @@ async def login(
 
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh,
         user=UserRead.model_validate(user),
     )
 
@@ -60,6 +68,39 @@ async def login(
 @router.get("/me", response_model=UserRead, summary="Get current authenticated user")
 async def get_me(current_user: User = Depends(get_current_user)):
     return UserRead.model_validate(current_user)
+
+
+@router.post("/refresh", response_model=TokenResponse, summary="Silently renew access token")
+async def refresh_access_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange a valid refresh token for a new access + refresh token pair."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    refresh_tok = auth_header.removeprefix("Bearer ").strip()
+    payload = decode_refresh_token(refresh_tok)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    from uuid import UUID
+    user_id = payload.get("sub")
+    user = (await db.execute(select(User).where(User.id == UUID(user_id)))).scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    extra = {"role": user.role.value, "username": user.username}
+    new_access = create_access_token(subject=str(user.id), extra_claims=extra)
+    new_refresh = create_refresh_token(subject=str(user.id), extra_claims=extra)
+
+    return TokenResponse(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        user=UserRead.model_validate(user),
+    )
+
 
 @router.post("/change-password", summary="Change user password")
 async def change_password(

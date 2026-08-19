@@ -14,6 +14,7 @@ import '@xterm/xterm/css/xterm.css';
 import * as Y from 'yjs';
 import { aiApi } from '../../api/ai';
 import { toast } from '../shared/Toast';
+import { loadExecSettings } from '../../pages/SettingsPage';
 
 interface EditorPaneProps {
   value: string;
@@ -173,9 +174,14 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
   useEffect(() => {
     if (showTerminal && terminalTab === 'terminal' && terminalRef.current && !xtermRef.current) {
       const term = new Terminal({
-        theme: { background: '#0b0e15', foreground: '#e0e6ed', cursor: '#01EFAC' },
+        theme: { 
+          background: '#000000', 
+          foreground: '#e0e6ed', 
+          cursor: '#01EFAC' 
+        },
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         fontSize: 13,
+        cursorStyle: 'block',
         cursorBlink: true,
         convertEol: true,
       });
@@ -276,11 +282,14 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
     }, 6000);
 
     ws.onopen = () => {
+      const execSettings = loadExecSettings();
       ws.send(JSON.stringify({
         code,
         language,
         cols: term.cols,
-        rows: term.rows
+        rows: term.rows,
+        use_docker: execSettings.dockerSandbox,
+        timeout_seconds: execSettings.timeoutSeconds,
       }));
     };
 
@@ -325,11 +334,10 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         { token: 'variable', foreground: 'f8fafc' },
       ],
       colors: {
-        'editor.background': '#090d16',
+        'editor.background': '#1a1a1a',
         'editor.foreground': '#f8fafc',
         'editorCursor.foreground': '#3b82f6',
-        'editor.lineHighlightBackground': '#0e1320',
-        'editor.lineHighlightBorder': '#1a2236',
+        'editor.lineHighlightBackground': '#242424',
         'editorLineNumber.foreground': '#334155',
         'editorLineNumber.activeForeground': '#3b82f6',
         'editor.selectionBackground': '#1e3a8a',
@@ -348,6 +356,78 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
       const { lineNumber, column } = e.position;
       setCursorPos({ line: lineNumber, column });
       onCursorChange?.(lineNumber, column);
+    });
+
+    // ── Inline AI Autocomplete (ghost-text, Copilot-style) ────────────────
+    // Only activates when a Groq/OpenAI API key is stored in localStorage.
+    const getStoredApiKey = () =>
+      localStorage.getItem('nulltor_ai_api_key') || '';
+
+    let completionDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    const inlineProvider = monacoInstance.languages.registerInlineCompletionsProvider('*', {
+      provideInlineCompletions: async (model, position) => {
+        const apiKey = getStoredApiKey();
+        if (!apiKey) return { items: [] };
+
+        // Cancel any previous debounce
+        if (completionDebounce) clearTimeout(completionDebounce);
+
+        // Return a promise that resolves after 650ms debounce
+        return new Promise((resolve) => {
+          completionDebounce = setTimeout(async () => {
+            try {
+              const prefix = model.getValueInRange({
+                startLineNumber: Math.max(1, position.lineNumber - 50),
+                startColumn: 1,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              });
+              const suffix = model.getValueInRange({
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: Math.min(model.getLineCount(), position.lineNumber + 5),
+                endColumn: model.getLineMaxColumn(Math.min(model.getLineCount(), position.lineNumber + 5)),
+              });
+
+              const lang = model.getLanguageId();
+              const result = await aiApi.complete({
+                prefix,
+                suffix,
+                language: lang,
+                api_key: apiKey,
+              });
+
+              if (result.suggestion && result.suggestion.trim()) {
+                resolve({
+                  items: [{
+                    insertText: result.suggestion,
+                    range: {
+                      startLineNumber: position.lineNumber,
+                      startColumn: position.column,
+                      endLineNumber: position.lineNumber,
+                      endColumn: position.column,
+                    },
+                  }],
+                  enableForwardStability: true,
+                });
+              } else {
+                resolve({ items: [] });
+              }
+            } catch {
+              resolve({ items: [] });
+            }
+          }, 650);
+        });
+      },
+      // Required by this Monaco version — called to release individual completion items
+      disposeInlineCompletions: () => { /* no-op */ },
+    });
+
+    // Store disposable on the editor model for cleanup
+    editor.onDidDispose(() => {
+      inlineProvider.dispose();
+      if (completionDebounce) clearTimeout(completionDebounce);
     });
   }
 
@@ -710,24 +790,39 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
             }}
           />
           <div className="ide-terminal-header">
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '16px', paddingLeft: '8px' }}>
               <button
-                className={`btn btn-sm ${terminalTab === 'terminal' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '2px 8px', fontSize: '11px' }}
+                style={{
+                  background: 'none', border: 'none', outline: 'none',
+                  color: terminalTab === 'terminal' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  borderBottom: terminalTab === 'terminal' ? '1px solid var(--aurora-cyan)' : '1px solid transparent',
+                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'terminal' ? 600 : 500,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em'
+                }}
                 onClick={() => setTerminalTab('terminal')}
               >
                 TERMINAL
               </button>
               <button
-                className={`btn btn-sm ${terminalTab === 'problems' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '2px 8px', fontSize: '11px' }}
+                style={{
+                  background: 'none', border: 'none', outline: 'none',
+                  color: terminalTab === 'problems' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  borderBottom: terminalTab === 'problems' ? '1px solid var(--aurora-cyan)' : '1px solid transparent',
+                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'problems' ? 600 : 500,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em'
+                }}
                 onClick={() => setTerminalTab('problems')}
               >
                 PROBLEMS (0)
               </button>
               <button
-                className={`btn btn-sm ${terminalTab === 'output' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '2px 8px', fontSize: '11px' }}
+                style={{
+                  background: 'none', border: 'none', outline: 'none',
+                  color: terminalTab === 'output' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  borderBottom: terminalTab === 'output' ? '1px solid var(--aurora-cyan)' : '1px solid transparent',
+                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'output' ? 600 : 500,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em'
+                }}
                 onClick={() => setTerminalTab('output')}
               >
                 OUTPUT
@@ -739,12 +834,13 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
             </button>
           </div>
 
-          <div className="ide-terminal-body" style={{ padding: 0, overflow: 'hidden', height: '100%' }}>
+          <div className="ide-terminal-body" style={{ padding: 0, overflow: 'hidden', height: '100%', background: '#000000' }}>
             <div 
               ref={terminalRef} 
               style={{ 
                 height: '100%', 
                 width: '100%', 
+                background: '#000000',
                 display: terminalTab === 'terminal' ? 'block' : 'none',
               }} 
             />

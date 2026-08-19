@@ -104,6 +104,13 @@ async def lifespan(app: FastAPI):
     # Create all tables (idempotent — safe to run every startup)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Live migration: add passphrase_hash if it doesn't exist yet
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN passphrase_hash TEXT"))
+            logger.info("Migration: added passphrase_hash column to projects ✅")
+        except Exception:
+            pass  # Column already exists — safe to ignore
     logger.info("Database tables verified ✅")
 
     # Seed superadmin

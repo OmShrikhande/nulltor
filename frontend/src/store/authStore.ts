@@ -8,6 +8,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<UserRead>;
   logout: () => void;
   hydrate: () => void;
+  /** Called by the API client after a silent token refresh to keep state in sync. */
+  hydrateTokens: (accessToken: string, refreshToken?: string) => void;
 }
 
 const initialToken = localStorage.getItem('nulltor_token');
@@ -20,7 +22,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: !!(initialToken && initialUser),
 
   hydrate: () => {
-    // Left for backwards compatibility, but initial state is now loaded synchronously above.
     const token = localStorage.getItem('nulltor_token');
     const userStr = localStorage.getItem('nulltor_user');
     const user = userStr ? (JSON.parse(userStr) as UserRead) : null;
@@ -29,9 +30,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
+  hydrateTokens: (accessToken: string, refreshToken?: string) => {
+    localStorage.setItem('nulltor_token', accessToken);
+    if (refreshToken) localStorage.setItem('nulltor_refresh_token', refreshToken);
+    set({ token: accessToken, isAuthenticated: true });
+  },
+
   login: async (email, password) => {
     const data = await authApi.login(email, password);
     localStorage.setItem('nulltor_token', data.access_token);
+    if (data.refresh_token) {
+      localStorage.setItem('nulltor_refresh_token', data.refresh_token);
+    }
     localStorage.setItem('nulltor_user', JSON.stringify(data.user));
     set({ token: data.access_token, user: data.user, isAuthenticated: true });
     return data.user;
@@ -39,6 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     localStorage.removeItem('nulltor_token');
+    localStorage.removeItem('nulltor_refresh_token');
     localStorage.removeItem('nulltor_user');
     sessionStorage.clear(); // Ensure E2EE keys don't leak between users on same tab
     set({ token: null, user: null, isAuthenticated: false });

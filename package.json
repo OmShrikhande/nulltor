@@ -27,6 +27,7 @@
     "express": "^5.2.1",
     "http-proxy-middleware": "^4.2.0",
     "lib0": "^0.2.117",
+    "multicast-dns": "^7.2.5",
     "nodemon": "^3.1.14",
     "pg": "^8.23.0",
     "selfsigned": "^5.5.0",
