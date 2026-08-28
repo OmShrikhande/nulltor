@@ -7,8 +7,16 @@ from .audit_log import AuditLog
 from .branch import Branch, BranchMember
 from .merge_request import MergeRequest
 from .commit import Commit
+from .storage import (
+    EncryptedBlob,
+    BranchManifest,
+    CommitV2,
+    CommitFileDelta,
+    LiveKeyframe,
+)
 
 __all__ = [
     "User", "Project", "Membership", "Directory", "AuditLog",
     "Branch", "BranchMember", "MergeRequest", "Commit",
+    "EncryptedBlob", "BranchManifest", "CommitV2", "CommitFileDelta", "LiveKeyframe",
 ]

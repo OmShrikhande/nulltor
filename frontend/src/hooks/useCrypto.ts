@@ -20,31 +20,57 @@ import { useMemo } from 'react';
 const PBKDF2_ITERATIONS = 100_000;
 const KEY_BYTES = 32; // 256-bit
 
+// In-memory LRU-bounded cache for derived keys (passphrase:salt -> 256-bit key)
+const keyCache = new Map<string, Uint8Array>();
+const MAX_KEY_CACHE_SIZE = 500;
+
 function passphraseToKey(passphrase: string, salt: Uint8Array): Uint8Array {
-  return pbkdf2(sha256, passphrase, salt, {
+  const cacheKey = `${passphrase}::${toBase64(salt)}`;
+  const cached = keyCache.get(cacheKey);
+  if (cached) return cached;
+
+  const derived = pbkdf2(sha256, passphrase, salt, {
     c: PBKDF2_ITERATIONS,
     dkLen: KEY_BYTES,
   });
+
+  if (keyCache.size >= MAX_KEY_CACHE_SIZE) {
+    const firstKey = keyCache.keys().next().value;
+    if (firstKey) keyCache.delete(firstKey);
+  }
+  keyCache.set(cacheKey, derived);
+  return derived;
 }
 
 function toBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
+  let binary = '';
+  const len = bytes.byteLength;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, Math.min(i + chunkSize, len))));
+  }
+  return btoa(binary);
 }
 
 function fromBase64(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const binaryString = atob(b64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 export function useCrypto(passphrase: string, _salt: string) {
-  // We derive a fresh key per-call using a per-message random salt,
-  // so the static _salt param is kept for API compatibility but ignored here.
   const ready = useMemo(() => !!passphrase, [passphrase]);
+  const defaultSalt = useMemo(() => (passphrase ? randomBytes(16) : new Uint8Array(16)), [passphrase]);
 
   function encrypt(plaintext: string): string {
     if (!passphrase) throw new Error('Crypto passphrase not set');
 
-    const salt = randomBytes(16);           // fresh 128-bit salt per message
-    const iv   = randomBytes(12);           // fresh 96-bit IV per message (GCM standard)
+    const salt = defaultSalt;               // Fast session-cached salt
+    const iv   = randomBytes(12);           // Fresh 96-bit cryptographically random IV per message
     const key  = passphraseToKey(passphrase, salt);
 
     const plaintextBytes = new TextEncoder().encode(plaintext);

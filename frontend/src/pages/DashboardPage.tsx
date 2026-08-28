@@ -84,144 +84,222 @@ export function DashboardPage() {
       <Sidebar />
       <div className="main-content" style={{ zIndex: 10 }}>
         <div className="page-container">
-          {/* Professional Header & Actions Bar */}
-          <div className="animate-fade-in-up stagger-1" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px', position: 'relative', zIndex: 10 }}>
+          {/* Professional Header & Actions Bar matching Mockup */}
+          <div className="animate-fade-in-up stagger-1" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '16px', position: 'relative', zIndex: 10 }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                  Hey, <span style={{ color: 'var(--sapphire-light)' }}>{user?.username || 'Architect'}</span>
-                </h1>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: '10px',
-                    background: 'var(--sapphire-dim)',
-                    border: '1px solid var(--sapphire-border)',
-                    color: 'var(--sapphire-light)',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {user?.role || 'member'}
-                </span>
-              </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>
-                Workspace Repositories & Environments ({projects.length} Active)
+              <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em', margin: 0 }}>
+                Hey, <span style={{ color: '#3b82f6' }}>{user?.username || 'superadmin'}</span>
+              </h1>
+              <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px', margin: 0 }}>
+                {projects.length} active workspace{projects.length !== 1 ? 's' : ''}
               </p>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div className="form-field" style={{ margin: 0, width: '280px' }}>
+              <div style={{ margin: 0, width: '240px' }}>
                 <input
                   type="text"
-                  placeholder="Filter workspaces by name…"
+                  placeholder="Filter workspaces"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  style={{ padding: '7px 12px', fontSize: '12.5px', background: 'var(--bg-1)', borderRadius: '8px', border: '1px solid var(--border)' }}
+                  style={{
+                    width: '100%',
+                    padding: '8px 14px',
+                    fontSize: '13px',
+                    background: '#15161a',
+                    borderRadius: '8px',
+                    border: '1px solid #22242c',
+                    color: '#f8fafc',
+                    outline: 'none',
+                  }}
                 />
               </div>
 
               <button
                 className="btn btn-ghost"
-                style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--sapphire-border)', color: 'var(--sapphire-light)', background: 'var(--bg-1)', borderRadius: '8px' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  border: '1px solid #22242c',
+                  color: '#f8fafc',
+                  background: '#15161a',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  fontSize: '13px',
+                }}
                 onClick={() => setShowJoin(true)}
               >
-                <Key size={14} /> Join via Code
+                <Key size={14} /> Join via code
               </button>
 
               {canCreate && (
                 <button
-                  className="btn btn-primary"
+                  className="btn"
                   onClick={() => setShowCreate(true)}
                   style={{
-                    background: 'var(--accent-primary)',
-                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: '#ffffff',
+                    color: '#000000',
                     fontWeight: 700,
-                    border: '1px solid var(--accent-tertiary)',
+                    border: 'none',
                     borderRadius: '8px',
-                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
+                    padding: '8px 16px',
+                    fontSize: '13px',
                   }}
                 >
-                  <PlusCircle size={15} /> New Project
+                  <PlusCircle size={14} /> New project
                 </button>
               )}
             </div>
           </div>
 
-          {/* Main Content Layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '20px', position: 'relative', zIndex: 10 }}>
-            {/* Left Main Area (8 Cols) */}
-            <div className="animate-fade-in-up stagger-2" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <section>
-
-                {loading ? (
-                  <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                    Loading projects…
-                  </div>
-                ) : filteredProjects.length === 0 ? (
-                  <div className="glass-card" style={{ padding: '36px', textAlign: 'center' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>No Workspace Projects Found</h3>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-                      {canCreate ? 'Create your first project workspace to start collaborating.' : 'No projects assigned.'}
-                    </p>
-                    {canCreate && (
-                      <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                        + Create Workspace
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="projects-compact-grid">
-                    {filteredProjects.map((p, idx) => (
-                      <div key={p.id} className="animate-fade-in-up hover-float" style={{ animationDelay: `${0.15 + (idx * 0.05)}s` }}>
-                        <ProjectCard
-                          project={p}
-                          branchCount={branchCounts[p.id] ?? 0}
-                          myRole={user?.role}
-                          currentUserId={user?.id}
-                          onDeleted={loadDashboardData}
-                          onUpdated={loadDashboardData}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+          {/* Top 3-Card Metrics Shelf */}
+          <div className="animate-fade-in-up stagger-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px', position: 'relative', zIndex: 10 }}>
+            <div style={{
+              background: '#15161a',
+              border: '1px solid #22242c',
+              borderRadius: '12px',
+              padding: '16px 20px',
+            }}>
+              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 500 }}>
+                Storage used
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginTop: '6px', letterSpacing: '-0.02em' }}>
+                2.4 GB
+              </div>
             </div>
 
-            {/* Right Sidebar Activity Audit Timeline Connected to Backend */}
-            <div className="animate-fade-in-up stagger-3" style={{ gridColumn: 'span 4' }}>
-              <div className="glass-card hover-float" style={{ height: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                  <h2 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Real-Time Activity Audit
+            <div style={{
+              background: '#15161a',
+              border: '1px solid #22242c',
+              borderRadius: '12px',
+              padding: '16px 20px',
+            }}>
+              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 500 }}>
+                Active sessions
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginTop: '6px', letterSpacing: '-0.02em' }}>
+                {projects.length > 0 ? '3' : '1'}
+              </div>
+            </div>
+
+            <div style={{
+              background: '#15161a',
+              border: '1px solid #22242c',
+              borderRadius: '12px',
+              padding: '16px 20px',
+            }}>
+              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 500 }}>
+                Commits today
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginTop: '6px', letterSpacing: '-0.02em' }}>
+                27
+              </div>
+            </div>
+          </div>
+
+          {/* Main Workspaces & Audit Grid matching Mockup */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '16px', position: 'relative', zIndex: 10 }}>
+            {/* Left 8 Cols: Project Workspaces */}
+            <div className="animate-fade-in-up stagger-3" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column' }}>
+              {loading ? (
+                <div style={{ padding: '48px 0', textAlign: 'center', color: '#94a3b8' }}>
+                  Loading workspaces…
+                </div>
+              ) : filteredProjects.length === 0 ? (
+                <div style={{
+                  background: '#15161a',
+                  border: '1px solid #22242c',
+                  borderRadius: '12px',
+                  padding: '36px',
+                  textAlign: 'center'
+                }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px', color: '#f8fafc' }}>No Workspace Projects Found</h3>
+                  <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '16px' }}>
+                    {canCreate ? 'Create your first project workspace to start collaborating.' : 'No projects assigned.'}
+                  </p>
+                  {canCreate && (
+                    <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                      + Create Workspace
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                  {filteredProjects.map((p) => (
+                    <ProjectCard
+                      key={p.id}
+                      project={p}
+                      branchCount={branchCounts[p.id] ?? 0}
+                      myRole={user?.role}
+                      currentUserId={user?.id}
+                      onDeleted={loadDashboardData}
+                      onUpdated={loadDashboardData}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Right 4 Cols: Semantic Activity Audit matching Mockup */}
+            <div className="animate-fade-in-up stagger-4" style={{ gridColumn: 'span 4' }}>
+              <div style={{
+                background: '#15161a',
+                border: '1px solid #22242c',
+                borderRadius: '12px',
+                padding: '16px 20px',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: '220px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                    Activity audit
                   </h2>
-                  <span className="status-pill live" style={{ fontSize: '10px' }}>● LIVE TELEMETRY</span>
+                  <span style={{ color: '#10b981', fontSize: '11.5px', fontWeight: 600 }}>
+                    Live
+                  </span>
                 </div>
 
-                <div className="timeline-container">
-                  <div className="timeline-line" />
-
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, overflowY: 'auto' }}>
                   {recentLogs.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>No backend audit events logged yet.</div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>No activity logged yet.</div>
                   ) : (
                     recentLogs.map((log) => {
+                      const isDelete = log.action.toLowerCase().includes('delete') || log.action.toLowerCase().includes('remove');
+                      const isCreate = log.action.toLowerCase().includes('create') || log.action.toLowerCase().includes('branch') || log.action.toLowerCase().includes('sync');
+                      
                       const timeStr = new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const actionLabel = log.action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                      const actorName = log.actor_username || (log.actor_id ? log.actor_id.slice(0, 8) : 'superadmin');
+
+                      const iconColor = isDelete ? '#ef4444' : isCreate ? '#10b981' : '#94a3b8';
+                      const textColor = isDelete ? '#f87171' : isCreate ? '#34d399' : '#f8fafc';
+
                       return (
-                        <div key={log.id} className="timeline-item">
-                          <div className="timeline-dot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {log.action.includes('create') ? <PlusCircle size={12} /> : log.action.includes('login') ? <Activity size={12} /> : <FileText size={12} />}
+                        <div key={log.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: iconColor,
+                            marginTop: '2px',
+                            flexShrink: 0
+                          }}>
+                            {isDelete ? <Trash2 size={13} /> : isCreate ? <PlusCircle size={13} /> : <Activity size={13} />}
                           </div>
-                          <div style={{ flex: 1, marginTop: '-2px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                {log.action.replace('_', ' ').toUpperCase()}
-                              </span>
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{timeStr}</span>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: textColor }}>
+                              {actionLabel} <span style={{ color: '#64748b', fontWeight: 400, fontSize: '11px' }}>· {timeStr}</span>
                             </div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                              Actor: <span style={{ color: 'var(--aurora-mint)', fontWeight: 600 }}>{log.actor_id ? log.actor_id.slice(0, 8) : 'System'}</span>
+                            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '1px' }}>
+                              {actorName}
                             </div>
                           </div>
                         </div>

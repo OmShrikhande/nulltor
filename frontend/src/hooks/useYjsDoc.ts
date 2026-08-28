@@ -4,12 +4,8 @@
  * Rooms are namespaced as `${fileId}::${branchId}` to give each branch
  * an independent edit history. Encrypted Yjs deltas travel over the wire —
  * the server sees only opaque encrypted strings.
- * 
- * Usage:
- *   const { text, content, isConnected, cursors } = useYjsDoc({ fileId, branchId, encrypt, decrypt });
- *   // bind `text` (Y.Text) to Monaco Editor via y-monaco or MonacoBinding
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as Y from 'yjs';
 import { io, Socket } from 'socket.io-client';
 
@@ -19,6 +15,7 @@ interface UseYjsDocOptions {
   encrypt: (plaintext: string) => string;
   decrypt: (ciphertext: string) => string;
   username?: string;
+  userId?: string;
   color?: string;
 }
 
@@ -38,12 +35,35 @@ export interface RemoteCursor {
 
 interface UseYjsDocResult {
   doc: Y.Doc | null;
+  docRef: React.MutableRefObject<Y.Doc | null>;
   text: Y.Text | null;
   isConnected: boolean;
   peers: Peer[];
   cursors: RemoteCursor[];
   emitCursor: (line: number, column: number) => void;
+  saveSnapshot: () => boolean;
   socket: Socket | null;
+}
+
+// Safe chunked Base64 encoding/decoding to prevent call stack size exceeded errors
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, Math.min(i + chunkSize, len))));
+  }
+  return btoa(binary);
+}
+
+export function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 export function useYjsDoc({
@@ -52,42 +72,67 @@ export function useYjsDoc({
   encrypt,
   decrypt,
   username = 'Anonymous',
+  userId,
   color = '#6366f1',
 }: UseYjsDocOptions): UseYjsDocResult {
   const [doc, setDoc] = useState<Y.Doc | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [cursors, setCursors] = useState<RemoteCursor[]>([]);
+  const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
+  // Always-current refs so saveSnapshot never captures a stale closure
+  const docRef = useRef<Y.Doc | null>(null);
+  const encryptRef = useRef<(plaintext: string) => string>(encrypt);
 
-  const roomKey = `${fileId}::${branchId}`;
+  // Keep encryptRef in sync every render
+  encryptRef.current = encrypt;
+
+  const isRealFile = Boolean(fileId && fileId !== '__none__');
+  const effectiveFileId = isRealFile ? fileId : '__workspace__';
+  const effectiveBranchId = branchId || 'main';
+  const roomKey = `${effectiveFileId}::${effectiveBranchId}`;
 
   useEffect(() => {
-    if (!fileId || !branchId || fileId === '__none__') {
+    // Create Yjs document for real files
+    let newDoc: Y.Doc | null = null;
+    if (isRealFile) {
+      newDoc = new Y.Doc();
+      docRef.current = newDoc;  // keep ref in sync immediately (before async setState)
+      setDoc(newDoc);
+    } else {
+      docRef.current = null;
       setDoc(null);
-      return;
     }
 
-    // Create Yjs document
-    const newDoc = new Y.Doc();
-    setDoc(newDoc);
+    let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushSnapshot = () => {
+      if (!newDoc || !socketRef.current) return;
+      try {
+        const fullUpdate = Y.encodeStateAsUpdate(newDoc);
+        const fullB64 = uint8ArrayToBase64(fullUpdate);
+        const fullPayload = encrypt(fullB64);
+        socketRef.current.emit('y-snapshot', fullPayload);
+      } catch (_) {}
+    };
 
     // Connect to Node.js Socket.IO server with explicit reconnection settings
     const socket = io('/', {
       path: '/socket.io',
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 8000,
     });
     socketRef.current = socket;
+    setActiveSocket(socket);
 
     socket.on('connect', () => {
       setIsConnected(true);
-      // Re-join and re-sync on every connect (covers reconnects after drops)
-      socket.emit('join-file', { fileId, branchId });
+      // Re-join and re-sync on every connect
+      socket.emit('join-file', { fileId: effectiveFileId, branchId: effectiveBranchId });
     });
 
     socket.on('disconnect', () => {
@@ -97,7 +142,7 @@ export function useYjsDoc({
 
     // Receive approved event: load snapshot and register peer
     socket.on('approved', ({ snapshot }: { snapshot: string | null }) => {
-      if (snapshot) {
+      if (snapshot && newDoc) {
         try {
           let isPlaintext = false;
           let updateStr = "";
@@ -114,27 +159,29 @@ export function useYjsDoc({
               ytext.insert(0, updateStr);
             }, 'local');
           } else {
-            const update = Uint8Array.from(atob(updateStr), (c) => c.charCodeAt(0));
+            const update = base64ToUint8Array(updateStr);
             Y.applyUpdate(newDoc, update);
           }
         } catch (_) {
           // ignore
         }
       }
-      socket.emit('register-peer', { name: username, color });
+      socket.emit('register-peer', { name: username, color, userId });
     });
 
     // Receive delta from other peers
     socket.on('y-delta', (payload: string) => {
+      if (!newDoc) return;
       try {
         const decrypted = decrypt(payload);
-        const update = Uint8Array.from(atob(decrypted), (c) => c.charCodeAt(0));
+        const update = base64ToUint8Array(decrypted);
         Y.applyUpdate(newDoc, update);
-      } catch (_) {/* ignore decrypt errors from key mismatch */}
+      } catch (_) {}
     });
 
     // Sync response (full snapshot from another peer)
     socket.on('sync-response', ({ snapshot }: { snapshot: string }) => {
+      if (!newDoc) return;
       try {
         let isPlaintext = false;
         let updateStr = "";
@@ -151,7 +198,7 @@ export function useYjsDoc({
             ytext.insert(0, updateStr);
           }, 'local');
         } else {
-          const update = Uint8Array.from(atob(updateStr), (c) => c.charCodeAt(0));
+          const update = base64ToUint8Array(updateStr);
           Y.applyUpdate(newDoc, update);
         }
       } catch (_) {}
@@ -159,9 +206,10 @@ export function useYjsDoc({
 
     // Someone needs our snapshot
     socket.on('sync-needed', ({ requesterId }: { requesterId: string }) => {
-      const update = Y.encodeStateAsUpdate(newDoc);
-      const b64 = btoa(String.fromCharCode(...update));
+      if (!newDoc) return;
       try {
+        const update = Y.encodeStateAsUpdate(newDoc);
+        const b64 = uint8ArrayToBase64(update);
         const payload = encrypt(b64);
         socket.emit('y-sync-offer', { targetId: requesterId, payload });
       } catch (_) {}
@@ -171,7 +219,6 @@ export function useYjsDoc({
     socket.on('presence', ({ peers: p }: { peers: Peer[] }) => setPeers(p));
     socket.on('peer-left', ({ id }: { id: string }) => {
       setPeers((prev) => prev.filter((p) => p.id !== id));
-      // Remove this peer's cursor
       setCursors((prev) => prev.filter((c) => c.socketId !== id));
     });
 
@@ -184,28 +231,37 @@ export function useYjsDoc({
     });
 
     // Observe local changes and broadcast encrypted deltas
-    newDoc.on('update', (update: Uint8Array, origin: unknown) => {
-      if (origin === 'remote') return; // don't re-broadcast received updates
-      const b64 = btoa(String.fromCharCode(...update));
-      try {
-        const payload = encrypt(b64);
-        socket.emit('y-delta', payload);
+    if (newDoc) {
+      newDoc.on('update', (update: Uint8Array, origin: unknown) => {
+        if (origin === 'remote') return;
+        try {
+          const b64 = uint8ArrayToBase64(update);
+          const payload = encrypt(b64);
+          socket.emit('y-delta', payload);
 
-        // Persist full snapshot every 30 updates (debounce in practice)
-        const fullUpdate = Y.encodeStateAsUpdate(newDoc);
-        const fullB64 = btoa(String.fromCharCode(...fullUpdate));
-        const fullPayload = encrypt(fullB64);
-        socket.emit('y-snapshot', fullPayload);
-      } catch (_) {}
-    });
+          if (snapshotTimer) clearTimeout(snapshotTimer);
+          snapshotTimer = setTimeout(flushSnapshot, 2500);
+        } catch (_) {}
+      });
+    }
 
-    socket.emit('request-sync');
+    if (isRealFile) {
+      socket.emit('request-sync');
+    }
 
     return () => {
+      if (snapshotTimer) {
+        clearTimeout(snapshotTimer);
+        flushSnapshot();
+      }
       socket.disconnect();
-      newDoc.destroy();
+      if (newDoc) {
+        newDoc.destroy();
+      }
+      docRef.current = null;  // clear ref so saveSnapshot doesn't use a destroyed doc
       setDoc(null);
       socketRef.current = null;
+      setActiveSocket(null);
       setIsConnected(false);
       setPeers([]);
       setCursors([]);
@@ -216,13 +272,31 @@ export function useYjsDoc({
     socketRef.current?.emit('cursor-update', { line, column });
   }, []);
 
+  const saveSnapshot = useCallback(() => {
+    // Use refs so we always get the LIVE doc and encrypt fn, not stale closure values
+    const liveDoc = docRef.current;
+    const liveSocket = socketRef.current;
+    if (!liveDoc || !liveSocket) return false;
+    try {
+      const fullUpdate = Y.encodeStateAsUpdate(liveDoc);
+      const fullB64 = uint8ArrayToBase64(fullUpdate);
+      const fullPayload = encryptRef.current(fullB64);
+      liveSocket.emit('y-snapshot', fullPayload);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, []); // stable — reads everything from refs
+
   return {
     doc,
+    docRef,
     text: doc ? doc.getText('content') : null,
     isConnected,
     peers,
     cursors,
     emitCursor,
-    socket: socketRef.current,
+    saveSnapshot,
+    socket: activeSocket,
   };
 }

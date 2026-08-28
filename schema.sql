@@ -153,6 +153,46 @@ CREATE TABLE IF NOT EXISTS commits (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
+-- Content-Addressable Encrypted Blob Pool (CAS)
+CREATE TABLE IF NOT EXISTS encrypted_blobs (
+    hash        VARCHAR(64)  PRIMARY KEY,
+    ciphertext  TEXT         NOT NULL,
+    size_bytes  INTEGER      NOT NULL,
+    is_binary   BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Workspace Branch Tree Manifests
+CREATE TABLE IF NOT EXISTS branch_manifests (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID         NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    branch_id   UUID         NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    tree_json   JSONB        NOT NULL DEFAULT '{}',
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Workspace Multi-file Atomic Commits (v2)
+CREATE TABLE IF NOT EXISTS commits_v2 (
+    id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id        UUID         NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    branch_id         UUID         NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    parent_commit_id  UUID         REFERENCES commits_v2(id) ON DELETE SET NULL,
+    user_id           UUID         REFERENCES users(id) ON DELETE SET NULL,
+    message           VARCHAR(255) NOT NULL,
+    tree_manifest     JSONB        NOT NULL DEFAULT '{}',
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Commit File Delta Tracking
+CREATE TABLE IF NOT EXISTS commit_file_deltas (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    commit_id   UUID         NOT NULL REFERENCES commits_v2(id) ON DELETE CASCADE,
+    file_path   VARCHAR(512) NOT NULL,
+    change_type VARCHAR(20)  NOT NULL,
+    blob_hash   VARCHAR(64),
+    diff_stat   JSONB        NOT NULL DEFAULT '{}'
+);
+
 -- Merge Requests
 CREATE TABLE IF NOT EXISTS merge_requests (
     id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,11 +1,11 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import Editor from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { useEditorStore } from '../../store/editorStore';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuthStore } from '../../store/authStore';
-import { type RemoteCursor } from '../../hooks/useYjsDoc';
-import { Edit2, File, Palette, User, History, Bot, RefreshCw, X } from 'lucide-react';
+import { type RemoteCursor, uint8ArrayToBase64 } from '../../hooks/useYjsDoc';
+import { Edit2, File, Palette, User, History, Bot, RefreshCw, X, Save, Folder } from 'lucide-react';
 import { CommitHistoryPanel } from './CommitHistoryPanel';
 import { extractTextFromYjsSnapshot } from './DiffViewerModal';
 import { Terminal } from '@xterm/xterm';
@@ -15,6 +15,7 @@ import * as Y from 'yjs';
 import { aiApi } from '../../api/ai';
 import { toast } from '../shared/Toast';
 import { loadExecSettings } from '../../pages/SettingsPage';
+import type { DirectoryNode } from '../../api/directories';
 
 interface EditorPaneProps {
   value: string;
@@ -30,18 +31,60 @@ interface EditorPaneProps {
   onRunStateChange?: (running: boolean) => void;
   onCommitRequest?: () => void;
   projectId?: string;
+  projectName?: string;
   branchId?: string;
   fileId?: string;
+  tree?: DirectoryNode[];
   getDoc?: () => any;
   decrypt?: (cipherText: string) => string;
+  onSave?: () => void;
+  isSaving?: boolean;
 }
 
-export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBranchPrompt, onJoinSharedRoom, peers = [], cursors = [], onCursorChange, runTrigger = 0, onRunStateChange, onCommitRequest, projectId, branchId, fileId, getDoc, decrypt }: EditorPaneProps) {
-  const { openFile, openTabs, language, setDirty, setOpenFile, closeTab } = useEditorStore();
+export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBranchPrompt, onJoinSharedRoom, peers = [], cursors = [], onCursorChange, runTrigger = 0, onRunStateChange, onCommitRequest, projectId, projectName, branchId, fileId, tree = [], getDoc, decrypt, onSave, isSaving }: EditorPaneProps) {
+  const { openFile, openTabs, language, isDirty, setDirty, setOpenFile, closeTab } = useEditorStore();
   const { theme } = useTheme();
   const user = useAuthStore((s) => s.user);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const isRemoteApplyingRef = useRef(false);
 
+  // Observe Y.Text for remote changes and apply them directly to Monaco without cursor jumps or React re-renders
+  useEffect(() => {
+    const yDoc = getDoc ? getDoc() : null;
+    if (!yDoc) return;
+    const yText = yDoc.getText('content');
+
+    const observer = (event: Y.YTextEvent) => {
+      // Ignore our own local keystrokes originating from Monaco
+      if (event.transaction.origin === 'local-monaco') return;
+
+      const editor = editorRef.current;
+      if (!editor) return;
+      const model = editor.getModel();
+      if (!model) return;
+
+      const newContent = yText.toString();
+      if (model.getValue() === newContent) return;
+
+      isRemoteApplyingRef.current = true;
+      try {
+        editor.executeEdits('yjs-remote', [
+          {
+            range: model.getFullModelRange(),
+            text: newContent,
+            forceMoveMarkers: true,
+          },
+        ]);
+      } finally {
+        isRemoteApplyingRef.current = false;
+      }
+    };
+
+    yText.observe(observer);
+    return () => {
+      yText.unobserve(observer);
+    };
+  }, [getDoc, fileId]);
 
   // Terminal State
   const [showTerminal, setShowTerminal] = useState(true);
@@ -194,7 +237,7 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         try { fitAddon.fit(); } catch(e) {}
       }, 50);
 
-      term.writeln('\x1b[36mReady. Press "Execute" to run ' + (openFile ? openFile.name : 'code') + '.\x1b[0m');
+      term.writeln('\x1b[36mReady. Press "Execute" to run code.\x1b[0m');
 
       xtermRef.current = term;
       fitAddonRef.current = fitAddon;
@@ -358,6 +401,11 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
       onCursorChange?.(lineNumber, column);
     });
 
+    // Register Save command (Ctrl+S / Cmd+S)
+    editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
+      onSave?.();
+    });
+
     // ── Inline AI Autocomplete (ghost-text, Copilot-style) ────────────────
     // Only activates when a Groq/OpenAI API key is stored in localStorage.
     const getStoredApiKey = () =>
@@ -424,9 +472,31 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
       disposeInlineCompletions: () => { /* no-op */ },
     });
 
+    // ── Incremental Monaco -> Yjs delta synchronization ────────────────
+    const contentDisposable = editor.onDidChangeModelContent((event) => {
+      if (isRemoteApplyingRef.current || readOnly) return;
+      const yDoc = getDoc ? getDoc() : null;
+      if (!yDoc) return;
+      const yText = yDoc.getText('content');
+
+      yDoc.transact(() => {
+        for (const change of event.changes) {
+          if (change.rangeLength > 0) {
+            yText.delete(change.rangeOffset, change.rangeLength);
+          }
+          if (change.text.length > 0) {
+            yText.insert(change.rangeOffset, change.text);
+          }
+        }
+      }, 'local-monaco');
+
+      setDirty(true);
+    });
+
     // Store disposable on the editor model for cleanup
     editor.onDidDispose(() => {
       inlineProvider.dispose();
+      contentDisposable.dispose();
       if (completionDebounce) clearTimeout(completionDebounce);
     });
   }
@@ -459,6 +529,7 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         <div style={{ display: 'flex', height: '100%', overflowX: 'auto', flex: 1 }}>
           {openTabs.map((tab) => {
             const isActive = tab.id === openFile.id;
+            const isTabDirty = isActive && isDirty;
             const ext = tab.name.split('.').pop()?.toLowerCase() ?? '';
             const tabIcon = ['ts','tsx'].includes(ext) ? <span style={{ color: '#3178c6' }}><File size={13} /></span>
               : ['js','jsx'].includes(ext) ? <span style={{ color: '#f7df1e' }}><File size={13} /></span>
@@ -479,12 +550,31 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
                   borderRight: '1px solid var(--border)', height: '100%',
                   flexShrink: 0,
                 }}
-                onClick={() => setOpenFile(tab)}
+                onClick={() => {
+                  if (isDirty && tab.id !== openFile.id) {
+                    onSave?.();
+                  }
+                  setOpenFile(tab);
+                }}
               >
                 {tabIcon}
-                {tab.name}
+                <span>{tab.name}</span>
+                {isTabDirty && (
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: '#38bdf8',
+                      boxShadow: '0 0 6px #38bdf8',
+                      display: 'inline-block',
+                      marginLeft: '2px',
+                    }}
+                    title="Unsaved changes (Ctrl+S)"
+                  />
+                )}
                 <span
-                  style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: 2, opacity: 0.7, lineHeight: 1 }}
+                  style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: 4, opacity: 0.7, lineHeight: 1 }}
                   onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
                   title={`Close ${tab.name}`}
                 >
@@ -514,6 +604,25 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
           >
             <Bot size={13} /> Agent
           </button>
+          {onSave && !readOnly && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onSave}
+              disabled={isSaving}
+              style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                color: isSaving ? '#38bdf8' : 'var(--text-secondary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              title="Save File (Ctrl+S)"
+            >
+              {isSaving ? <RefreshCw size={11} className="spin" /> : <Save size={11} />}
+              <span>{isSaving ? 'Saving...' : 'Save'}</span>
+            </button>
+          )}
           {onCommitRequest && !readOnly && (
             <button
               className="btn btn-primary btn-sm"
@@ -542,13 +651,62 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         </div>
       </div>
 
-      {/* Breadcrumbs */}
-      <div style={{ padding: '4px 16px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12.5px', color: 'var(--text-secondary)', background: 'var(--bg-0)' }}>
-        <span>src</span>
-        <span style={{ margin: '0 2px' }}>&gt;</span>
-        <span>components</span>
-        <span style={{ margin: '0 2px' }}>&gt;</span>
-        <span>{openFile.name}</span>
+      {/* Sub-Header matching Mockup: Encrypted Scope Badge (Left) <--> Breadcrumbs (Right) */}
+      <div style={{
+        height: '32px',
+        padding: '0 16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        fontSize: '12px',
+        background: '#141518',
+        borderBottom: '1px solid #1f2128',
+      }}>
+        {/* Left: Compact E2EE / Shared Status Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 600 }}>
+          <span style={{ fontSize: '12px' }}>🔒</span>
+          <span style={{ color: '#94a3b8' }}>
+            {isSharedModeActive ? 'Shared main branch' : 'main'} · <strong style={{ color: '#10b981', fontWeight: 600 }}>encrypted</strong>
+          </span>
+        </div>
+
+        {/* Right: Real Dynamic Workspace Breadcrumbs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#64748b', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {projectName && (
+            <>
+              <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <Folder size={11} /> {projectName}
+              </span>
+              <span style={{ color: '#475569' }}>/</span>
+            </>
+          )}
+          {(() => {
+            // Traverse tree to get true path
+            const findPath = (nodes: DirectoryNode[], cur: string[]): string[] | null => {
+              for (const n of nodes) {
+                if (n.id === openFile.id) return [...cur, n.name];
+                if (n.children && n.children.length > 0) {
+                  const found = findPath(n.children, [...cur, n.name]);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            const pathSegments = (tree && tree.length > 0 ? findPath(tree, []) : null) || [openFile.name];
+
+            return pathSegments.map((segment, idx) => {
+              const isLast = idx === pathSegments.length - 1;
+              return (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <span style={{ color: '#475569' }}>/</span>}
+                  <span style={{ color: isLast ? '#f8fafc' : '#94a3b8', fontWeight: isLast ? 600 : 400 }}>
+                    {segment}
+                  </span>
+                </React.Fragment>
+              );
+            });
+          })()}
+        </div>
       </div>
 
       {/* Floating Inline AI Copilot Prompt Bar (Ctrl+K) */}
@@ -703,35 +861,8 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         </div>
       )}
 
-      {isSharedModeActive && (
-        <div style={{ padding: '8px 16px', background: 'rgba(37, 99, 235, 0.12)', color: '#60a5fa', borderBottom: '1px solid rgba(37, 99, 235, 0.3)', fontSize: '12.5px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span><strong>Sharing Mode Active:</strong>&nbsp;You are collaboratively editing the shared main branch.</span>
-        </div>
-      )}
-
-      {/* Editor Main Canvas with Live Remote Cursor User Name Badge */}
+      {/* Editor Main Canvas */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {/* Active Users Banner (instead of floating over code) */}
-        <div style={{ 
-          display: 'flex', gap: '8px', padding: '6px 12px', background: 'var(--bg-1)', borderBottom: '1px solid var(--border)',
-          alignItems: 'center', flexWrap: 'wrap', minHeight: '32px'
-        }}>
-          <span className="cursor-name-badge" style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
-            <Edit2 size={12} /> {currentUserDisplayName} (L:{cursorPos.line}, C:{cursorPos.column})
-          </span>
-          {/* Remote cursor badges — enhanced with line number from cursor data */}
-          {cursors.map((cursor) => (
-            <span key={cursor.socketId} className="cursor-name-badge" style={{ background: '#1d4ed8', color: '#ffffff', fontSize: '11px', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
-              <User size={12} /> {cursor.name} (L:{cursor.line})
-            </span>
-          ))}
-          {/* Fallback: peers not yet reporting cursor position */}
-          {peers.filter(p => !cursors.find(c => c.name === p.name)).map((peer, i) => (
-            <span key={peer.id || i} className="cursor-name-badge" style={{ background: '#3b82f6', color: '#ffffff', fontSize: '11px', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700, opacity: 0.85 }}>
-              <User size={12} /> {peer.name}
-            </span>
-          ))}
-        </div>
 
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
           {showAiBadge && (
@@ -863,7 +994,7 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
           getCurrentSnapshot={() => {
             const doc = getDoc?.();
             if (!doc) return null;
-            return btoa(String.fromCharCode.apply(null, Array.from(Y.encodeStateAsUpdate(doc))));
+            return uint8ArrayToBase64(Y.encodeStateAsUpdate(doc));
           }}
           decryptSnapshot={(snapshotEncrypted) => {
             return decrypt ? decrypt(snapshotEncrypted) : snapshotEncrypted;

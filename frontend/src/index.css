@@ -145,6 +145,28 @@
 [data-theme="light"] .logo-dark-img { display: none; }
 [data-theme="light"] .logo-light-img { display: block; }
 
+/* Global Background & Shell (Ambient Swirl + Dark Charcoal Studio) */
+.global-bg-wrapper {
+  position: fixed;
+  inset: -10px;
+  background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.18;
+  filter: contrast(1.15) saturate(1.2);
+  z-index: -2;
+  pointer-events: none;
+}
+
+.global-bg-wrapper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 30%, rgba(17, 18, 21, 0.4) 0%, #111215 85%);
+  z-index: -1;
+}
+
 
 html, body, #root {
   height: 100%;
@@ -157,33 +179,6 @@ html, body, #root {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Global Background & Animations */
-.global-bg-wrapper {
-  position: fixed;
-  inset: -20px;
-  background-image: url('/bg.jpg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  z-index: -2;
-  animation: bgPan 30s infinite alternate ease-in-out;
-}
-
-.global-bg-wrapper::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  /* Charcoal overlay over the image */
-  background: rgba(18, 18, 18, 0.85);
-  backdrop-filter: blur(4px);
-  z-index: -1;
-}
-
-@keyframes bgPan {
-  0% { transform: scale(1.05) translate(0, 0); }
-  100% { transform: scale(1.1) translate(-2%, 2%); }
 }
 
 .animate-fade-in-up {

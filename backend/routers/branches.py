@@ -422,8 +422,11 @@ async def add_branch_member(
     if not branch or branch.type != BranchType.subroom:
         raise HTTPException(status_code=404, detail="Subroom branch not found")
 
-    if not await _can_manage_branch(db, project_id, branch, user):
-        raise HTTPException(status_code=403, detail="Only leads or the subroom creator can add members")
+    is_lead = await _can_manage_branch(db, project_id, branch, user)
+    is_creator = branch.created_by == user.id
+    is_self = payload.user_id == user.id
+    if not (is_lead or is_creator or is_self or user.role == UserRole.superadmin):
+        raise HTTPException(status_code=403, detail="Only leads, the subroom creator, or the invited user can join")
 
     # Ensure target user is a project member
     from models.user import User as UserModel

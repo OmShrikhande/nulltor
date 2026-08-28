@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/shared/Sidebar';
 import { Settings, Type, AlignLeft, WrapText, Monitor, RotateCcw, Terminal, Clock } from 'lucide-react';
+import { usersApi } from '../api/users';
 
 const STORAGE_KEY = 'nulltor-editor-settings';
 const EXEC_STORAGE_KEY = 'nulltor-exec-settings';
@@ -64,10 +65,36 @@ export function SettingsPage() {
   const [execSettings, setExecSettings] = useState<ExecSettings>(loadExecSettings);
   const [saved, setSaved] = useState(false);
 
+  // Load preferences from database on mount
+  useEffect(() => {
+    usersApi.getPreferences().then((pref) => {
+      if (pref && typeof pref === 'object' && Object.keys(pref).length > 0) {
+        if (pref.editor) {
+          const merged = { ...defaults, ...pref.editor };
+          setSettings(merged);
+          save(merged);
+        }
+        if (pref.exec) {
+          const mergedExec = { ...execDefaults, ...pref.exec };
+          setExecSettings(mergedExec);
+          saveExec(mergedExec);
+        }
+      }
+    }).catch(() => {});
+  }, []);
+
+  function syncRemotePreferences(nextEditor: EditorSettings, nextExec: ExecSettings) {
+    usersApi.updatePreferences({
+      editor: nextEditor,
+      exec: nextExec,
+    }).catch(() => {});
+  }
+
   function update<K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
       save(next);
+      syncRemotePreferences(next, execSettings);
       return next;
     });
     setSaved(true);
@@ -78,6 +105,7 @@ export function SettingsPage() {
     setExecSettings((prev) => {
       const next = { ...prev, [key]: value };
       saveExec(next);
+      syncRemotePreferences(settings, next);
       return next;
     });
     setSaved(true);
@@ -89,6 +117,7 @@ export function SettingsPage() {
     saveExec(execDefaults);
     setSettings(defaults);
     setExecSettings(execDefaults);
+    syncRemotePreferences(defaults, execDefaults);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }

@@ -473,10 +473,35 @@ async def confirm_merge(
     # Ensure the target file exists in the directories table for target branch
     target_file_id = await _ensure_target_file_node(db, project_id, mr.file_id, mr.target_branch_id, user.id)
 
-    # Write merged snapshot to file_snapshots for the target branch
+    # Write merged snapshot to file_snapshots, encrypted_blobs, and live_keyframes for target branch
     from sqlalchemy import text
+    import hashlib
+    blob_hash = hashlib.sha256(payload.merged_snapshot.encode('utf-8')).hexdigest()
+    size_bytes = len(payload.merged_snapshot.encode('utf-8'))
+    room_key = f"{target_file_id}::{str(mr.target_branch_id)}"
+
     try:
         async with engine.begin() as conn:
+            # 1. CAS encrypted_blobs
+            await conn.execute(
+                text("""
+                    INSERT INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
+                    VALUES (:hash, :data, :size, FALSE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (hash) DO NOTHING
+                """),
+                {"hash": blob_hash, "data": payload.merged_snapshot, "size": size_bytes},
+            )
+            # 2. live_keyframes
+            await conn.execute(
+                text("""
+                    INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
+                    VALUES (:room_key, :hash, CURRENT_TIMESTAMP)
+                    ON CONFLICT (room_key) DO UPDATE
+                    SET blob_hash = EXCLUDED.blob_hash, updated_at = CURRENT_TIMESTAMP
+                """),
+                {"room_key": room_key, "hash": blob_hash},
+            )
+            # 3. file_snapshots
             await conn.execute(
                 text("""
                     INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
@@ -487,7 +512,7 @@ async def confirm_merge(
                 {"fid": target_file_id, "bid": str(mr.target_branch_id), "data": payload.merged_snapshot},
             )
     except Exception as e:
-        print("Snapshot insert error:", e)
+        print("Merge CAS/snapshot insert error:", e)
 
     # Store reference in merge request for audit purposes
     mr.merged_snapshot = payload.merged_snapshot

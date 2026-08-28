@@ -56,7 +56,18 @@ export function TimelinePanel({
     }
   }
 
-  function handleViewDiff(commit: CommitResponse) {
+  async function resolveCommitSnapshot(commit: CommitResponse): Promise<string> {
+    if (commit.snapshot) {
+      return decrypt(commit.snapshot);
+    }
+    if (commit.blob_hash) {
+      const blob = await commitsApi.getBlob(projectId, commit.blob_hash);
+      return decrypt(blob.ciphertext);
+    }
+    throw new Error("Unable to resolve commit payload");
+  }
+
+  async function handleViewDiff(commit: CommitResponse) {
     try {
       const currentSnap = getCurrentSnapshot();
       if (!currentSnap) {
@@ -64,7 +75,7 @@ export function TimelinePanel({
         return;
       }
       const currentBase64 = decrypt(currentSnap);
-      const pastBase64 = decrypt(commit.snapshot);
+      const pastBase64 = await resolveCommitSnapshot(commit);
 
       setDiffOriginal(currentBase64);
       setDiffModified(pastBase64);
@@ -76,10 +87,10 @@ export function TimelinePanel({
     }
   }
 
-  function handleRestore(commit: CommitResponse) {
+  async function handleRestore(commit: CommitResponse) {
     if (!window.confirm(`Are you sure you want to restore to the commit from ${new Date(commit.created_at).toLocaleString()}? This will overwrite the current active file for everyone.`)) return;
     try {
-      const pastBase64 = decrypt(commit.snapshot);
+      const pastBase64 = await resolveCommitSnapshot(commit);
       onRestore(pastBase64);
     } catch (e) {
       console.error(e);

@@ -5,7 +5,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { Modal } from '../shared/Modal';
 import { MembersModal } from './MembersModal';
 import { toast } from '../shared/Toast';
-import { Folder, GitBranch, Users, Trash2, Key, Copy, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Folder, GitBranch, Users, Trash2, Key, Copy, RefreshCw, ShieldCheck, MoreVertical } from 'lucide-react';
 import CryptoJS from 'crypto-js';
 
 interface ProjectCardProps {
@@ -20,6 +20,7 @@ interface ProjectCardProps {
 export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, onDeleted, onUpdated }: ProjectCardProps) {
   const navigate = useNavigate();
   const [showMembers, setShowMembers] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [currentCode, setCurrentCode] = useState(project.invite_code);
   const [regenLoading, setRegenLoading] = useState(false);
@@ -37,6 +38,7 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
   const canSeeInviteCode = project.owner_id === currentUserId || myRole === 'superadmin' || myRole === 'admin';
   // Admin and superadmin can reset the passphrase
   const canResetPassphrase = myRole === 'superadmin' || myRole === 'admin';
+  const isOwner = project.owner_id === currentUserId || myRole === 'superadmin' || myRole === 'lead';
 
   async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
@@ -54,8 +56,8 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
     }
   }
 
-  async function handleDelete(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleDelete(e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
     if (!confirm(`Are you sure you want to completely delete "${project.name}"?`)) return;
     try {
       await projectsApi.delete(project.id);
@@ -66,8 +68,8 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
     }
   }
 
-  async function handleRegenCode(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleRegenCode(e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
     if (!confirm('Regenerate invite code? The old code will stop working immediately.')) return;
     setRegenLoading(true);
     try {
@@ -166,8 +168,6 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
     navigate(`/ide/${project.id}`);
   }
 
-  const isOwner = project.owner_id === currentUserId || myRole === 'superadmin' || myRole === 'lead';
-
   return (
     <>
       <div
@@ -176,111 +176,123 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && open()}
+        style={{
+          background: '#15161a',
+          border: '1px solid #22242c',
+          borderRadius: '12px',
+          padding: '16px 18px',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '140px',
+          position: 'relative'
+        }}
       >
-        <div className="project-card-top">
-          <div className="project-folder-icon" style={{ display: 'flex', alignItems: 'center' }}>
-            <Folder size={20} />
-          </div>
-
-          <div onClick={(e) => e.stopPropagation()}>
-            <span className={`status-pill ${status}`}>
-              ●
-              <select
-                value={status}
-                disabled={loadingStatus}
-                onChange={handleStatusChange}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ fontWeight: 800, fontSize: '15px', color: '#f8fafc', letterSpacing: '-0.01em' }}>
+              {project.name}
+            </span>
+            <div onClick={(e) => e.stopPropagation()}>
+              <span
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'inherit',
-                  fontWeight: 600,
                   fontSize: '11px',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  textTransform: 'capitalize',
+                  fontWeight: 600,
+                  color: status === 'live' ? '#10b981' : status === 'offline' ? '#94a3b8' : '#38bdf8',
+                  background: status === 'live' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                  padding: '2px 8px',
+                  borderRadius: '10px'
                 }}
               >
-                <option value="live" style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>Live</option>
-                <option value="offline" style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>Offline</option>
-                <option value="completed" style={{ background: 'var(--bg-1)', color: 'var(--text-primary)' }}>Completed</option>
-              </select>
-            </span>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>{project.name}</span>
-            {myRole && <span className="branch-pill main" style={{ fontSize: '10px', padding: '1px 6px' }}>{myRole}</span>}
-          </div>
-          <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '36px' }}>
+          <div style={{ fontSize: '12.5px', color: '#94a3b8', lineHeight: '1.45', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {project.description || 'No description provided'}
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid var(--border)', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><GitBranch size={14} /> {branchCount} branch{branchCount !== 1 ? 'es' : ''}</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', marginTop: '12px', borderTop: '1px solid #22242c', fontSize: '12px', color: '#94a3b8' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <GitBranch size={13} /> {branchCount} branch{branchCount !== 1 ? 'es' : ''}
+            </span>
             <button
               className="btn btn-ghost btn-sm"
-              style={{ padding: '2px 6px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              style={{ padding: '2px 6px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px', color: '#cbd5e1' }}
               onClick={(e) => { e.stopPropagation(); setShowMembers(true); }}
             >
               <Users size={12} /> Members
             </button>
           </div>
 
-          {isOwner && (
-            <button
-              className="btn-icon"
-              style={{ width: '22px', height: '22px', color: 'var(--danger)' }}
-              onClick={handleDelete}
-              title="Delete Project"
-            >
-              <Trash2 size={16} />
-            </button>
+          {(isOwner || canSeeInviteCode || canResetPassphrase) && (
+            <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+              <button
+                className="btn-icon"
+                style={{ width: '24px', height: '24px', color: '#94a3b8' }}
+                onClick={() => setShowMenu(!showMenu)}
+                title="More actions"
+              >
+                <MoreVertical size={15} />
+              </button>
+
+              {showMenu && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '100%',
+                    right: 0,
+                    marginBottom: '6px',
+                    background: '#18191e',
+                    border: '1px solid #2a2d36',
+                    borderRadius: '8px',
+                    padding: '4px',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                    zIndex: 50,
+                    minWidth: '155px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px'
+                  }}
+                  onMouseLeave={() => setShowMenu(false)}
+                >
+                  {canSeeInviteCode && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ width: '100%', justifyContent: 'flex-start', fontSize: '11.5px', padding: '6px 10px' }}
+                      onClick={() => { setShowMenu(false); setShowCode(true); }}
+                    >
+                      <Key size={12} /> Show invite code
+                    </button>
+                  )}
+                  {canResetPassphrase && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ width: '100%', justifyContent: 'flex-start', fontSize: '11.5px', padding: '6px 10px' }}
+                      onClick={() => { setShowMenu(false); setShowResetPassphrase(true); }}
+                    >
+                      <ShieldCheck size={12} /> Project settings
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ width: '100%', justifyContent: 'flex-start', fontSize: '11.5px', padding: '6px 10px', color: '#ef4444' }}
+                      onClick={() => { setShowMenu(false); handleDelete(); }}
+                    >
+                      <Trash2 size={12} /> Delete workspace
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
-
-        {/* Invite Code Row - Strictly restricted to owner, admin, or superadmin */}
-        {canSeeInviteCode && (
-          <div onClick={(e) => e.stopPropagation()} style={{ paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
-            {showCode && currentCode ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(1,239,172,0.07)', border: '1px solid rgba(1,239,172,0.2)', borderRadius: 'var(--radius-xs)', padding: '5px 8px' }}>
-                <Key size={12} style={{ color: 'var(--aurora-mint)', flexShrink: 0 }} />
-                <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--aurora-mint)', flex: 1 }}>{currentCode}</span>
-                <button className="btn-icon" style={{ width: 18, height: 18 }} title="Copy code" onClick={() => { navigator.clipboard.writeText(currentCode!); toast('Code copied!', 'success'); }}>
-                  <Copy size={11} />
-                </button>
-                <button className="btn-icon" style={{ width: 18, height: 18 }} title="Regenerate" onClick={handleRegenCode} disabled={regenLoading}>
-                  <RefreshCw size={11} style={{ animation: regenLoading ? 'spin 1s linear infinite' : undefined }} />
-                </button>
-                <button className="btn-icon" style={{ width: 18, height: 18 }} title="Hide" onClick={() => setShowCode(false)}>×</button>
-              </div>
-            ) : (
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', width: '100%', justifyContent: 'center' }}
-                onClick={() => setShowCode(true)}
-              >
-                <Key size={11} /> Show Invite Code
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Settings Button - Admin & Superadmin only */}
-        {canResetPassphrase && (
-          <div onClick={(e) => e.stopPropagation()} style={{ paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-            <button
-              className="btn btn-ghost btn-sm"
-              style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', width: '100%', justifyContent: 'center', color: 'var(--text-secondary)' }}
-              onClick={() => setShowResetPassphrase(true)}
-            >
-              <ShieldCheck size={11} /> Project Settings
-            </button>
-          </div>
-        )}
       </div>
 
       {showMembers && (

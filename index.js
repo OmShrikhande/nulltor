@@ -5,9 +5,14 @@ const path = require("path");
 const { Server } = require("socket.io");
 const { Pool } = require("pg");
 
+const crypto = require("crypto");
 const sqlite3 = require("sqlite3").verbose();
 const dbPath = path.join(__dirname, "backend", "nulltor.db");
 const sqliteDb = new sqlite3.Database(dbPath);
+
+function computeBlobHash(ciphertext) {
+    return crypto.createHash("sha256").update(ciphertext).digest("hex");
+}
 
 sqliteDb.serialize(() => {
     sqliteDb.run(`
@@ -18,9 +23,61 @@ sqliteDb.serialize(() => {
             updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (file_id, branch_id)
         );
+    `);
+    sqliteDb.run(`
+        CREATE TABLE IF NOT EXISTS encrypted_blobs (
+            hash        TEXT        PRIMARY KEY,
+            ciphertext  TEXT        NOT NULL,
+            size_bytes  INTEGER     NOT NULL,
+            is_binary   INTEGER     NOT NULL DEFAULT 0,
+            created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+    sqliteDb.run(`
+        CREATE TABLE IF NOT EXISTS live_keyframes (
+            room_key    TEXT        PRIMARY KEY,
+            blob_hash   TEXT        NOT NULL REFERENCES encrypted_blobs(hash),
+            updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+    sqliteDb.run(`
+        CREATE TABLE IF NOT EXISTS branch_manifests (
+            id          TEXT        PRIMARY KEY,
+            project_id  TEXT        NOT NULL,
+            branch_id   TEXT        NOT NULL,
+            tree_json   TEXT        NOT NULL DEFAULT '{}',
+            updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (project_id, branch_id)
+        );
+    `);
+    sqliteDb.run(`
+        CREATE TABLE IF NOT EXISTS commits_v2 (
+            id                TEXT        PRIMARY KEY,
+            project_id        TEXT        NOT NULL,
+            branch_id         TEXT        NOT NULL,
+            parent_commit_id  TEXT,
+            user_id           TEXT,
+            message           TEXT        NOT NULL,
+            tree_manifest     TEXT        NOT NULL DEFAULT '{}',
+            created_at        DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+    sqliteDb.run(`
+        CREATE TABLE IF NOT EXISTS commit_file_deltas (
+            id                TEXT        PRIMARY KEY,
+            commit_id         TEXT        NOT NULL REFERENCES commits_v2(id) ON DELETE CASCADE,
+            file_id           TEXT        NOT NULL,
+            file_path         TEXT        NOT NULL,
+            change_type       TEXT        NOT NULL DEFAULT 'modified',
+            blob_hash         TEXT        REFERENCES encrypted_blobs(hash),
+            encrypted_patch   TEXT,
+            parent_delta_id   TEXT        REFERENCES commit_file_deltas(id),
+            is_keyframe       INTEGER     NOT NULL DEFAULT 0,
+            chain_depth       INTEGER     NOT NULL DEFAULT 0
+        );
     `, (err) => {
-        if (err) console.error("[sqlite] file_snapshots init error:", err.message);
-        else console.log("[sqlite] file_snapshots table ready");
+        if (err) console.error("[sqlite] Tri-Engine storage init error:", err.message);
+        else console.log("[sqlite] Tri-Engine storage tables ready");
     });
 });
 
@@ -39,9 +96,21 @@ if (process.env.DATABASE_URL_PG) {
                 updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (file_id, branch_id)
             );
+            CREATE TABLE IF NOT EXISTS encrypted_blobs (
+                hash        VARCHAR(64) PRIMARY KEY,
+                ciphertext  TEXT        NOT NULL,
+                size_bytes  INTEGER     NOT NULL,
+                is_binary   BOOLEAN     NOT NULL DEFAULT FALSE,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS live_keyframes (
+                room_key    VARCHAR(255) PRIMARY KEY,
+                blob_hash   VARCHAR(64)  NOT NULL REFERENCES encrypted_blobs(hash),
+                updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+            );
         `).then(() => {
             usePg = true;
-            console.log("[pg] file_snapshots table ready");
+            console.log("[pg] Tri-Engine storage tables ready");
         }).catch(err => {
             console.log("[pg] PostgreSQL connection unavailable, using SQLite fallback");
             usePg = false;
@@ -56,9 +125,22 @@ async function loadSnapshot(fileId, branchId = 'main') {
     const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "") || 'main';
     if (!safeFileId) return null;
 
+    const roomKey = `${safeFileId}::${safeBranchId}`;
+
     if (usePg && pgPool) {
         try {
+            // 1. Try live_keyframes JOIN encrypted_blobs (CAS)
             let res = await pgPool.query(
+                `SELECT eb.ciphertext as data 
+                 FROM live_keyframes lk
+                 JOIN encrypted_blobs eb ON lk.blob_hash = eb.hash
+                 WHERE lk.room_key = $1`,
+                [roomKey]
+            );
+            if (res.rows.length > 0) return res.rows[0].data;
+
+            // 2. Legacy file_snapshots
+            res = await pgPool.query(
                 "SELECT data FROM file_snapshots WHERE file_id = $1 AND branch_id = $2",
                 [safeFileId, safeBranchId]
             );
@@ -89,42 +171,56 @@ async function loadSnapshot(fileId, branchId = 'main') {
     }
 
     return new Promise((resolve) => {
+        // 1. Try live_keyframes JOIN encrypted_blobs
         sqliteDb.get(
-            "SELECT data FROM file_snapshots WHERE file_id = ? AND branch_id = ?",
-            [safeFileId, safeBranchId],
+            `SELECT eb.ciphertext as data 
+             FROM live_keyframes lk
+             JOIN encrypted_blobs eb ON lk.blob_hash = eb.hash
+             WHERE lk.room_key = ?`,
+            [roomKey],
             (err, row) => {
-                if (err) {
-                    console.error("[sqlite] loadSnapshot error:", err.message);
-                    resolve(null);
-                } else if (row && row.data) {
+                if (!err && row && row.data) {
                     resolve(row.data);
-                } else if (safeBranchId !== 'main') {
-                    // Smart SQLite fallback: lookup corresponding file on main branch by name
-                    sqliteDb.get(
-                        `SELECT fs.data 
-                         FROM directories d_sub
-                         JOIN directories d_main ON d_sub.name = d_main.name AND d_sub.project_id = d_main.project_id
-                         JOIN branches b_main ON d_main.branch_id = b_main.id AND b_main.type = 'main'
-                         JOIN file_snapshots fs ON fs.file_id = d_main.id AND (fs.branch_id = b_main.id OR fs.branch_id = 'main')
-                         WHERE d_sub.id = ?
-                         ORDER BY fs.updated_at DESC LIMIT 1`,
-                        [safeFileId],
-                        (err2, row2) => {
-                            if (row2 && row2.data) {
-                                saveSnapshot(safeFileId, safeBranchId, row2.data);
-                                resolve(row2.data);
-                            } else {
-                                sqliteDb.get(
-                                    "SELECT data FROM file_snapshots WHERE file_id = ? AND branch_id = 'main'",
-                                    [safeFileId],
-                                    (err3, row3) => resolve(row3 ? row3.data : null)
-                                );
-                            }
-                        }
-                    );
-                } else {
-                    resolve(null);
+                    return;
                 }
+                // 2. Legacy file_snapshots
+                sqliteDb.get(
+                    "SELECT data FROM file_snapshots WHERE file_id = ? AND branch_id = ?",
+                    [safeFileId, safeBranchId],
+                    (err2, row2) => {
+                        if (err2) {
+                            console.error("[sqlite] loadSnapshot error:", err2.message);
+                            resolve(null);
+                        } else if (row2 && row2.data) {
+                            resolve(row2.data);
+                        } else if (safeBranchId !== 'main') {
+                            sqliteDb.get(
+                                `SELECT fs.data 
+                                 FROM directories d_sub
+                                 JOIN directories d_main ON d_sub.name = d_main.name AND d_sub.project_id = d_main.project_id
+                                 JOIN branches b_main ON d_main.branch_id = b_main.id AND b_main.type = 'main'
+                                 JOIN file_snapshots fs ON fs.file_id = d_main.id AND (fs.branch_id = b_main.id OR fs.branch_id = 'main')
+                                 WHERE d_sub.id = ?
+                                 ORDER BY fs.updated_at DESC LIMIT 1`,
+                                [safeFileId],
+                                (err3, row3) => {
+                                    if (row3 && row3.data) {
+                                        saveSnapshot(safeFileId, safeBranchId, row3.data);
+                                        resolve(row3.data);
+                                    } else {
+                                        sqliteDb.get(
+                                            "SELECT data FROM file_snapshots WHERE file_id = ? AND branch_id = 'main'",
+                                            [safeFileId],
+                                            (err4, row4) => resolve(row4 ? row4.data : null)
+                                        );
+                                    }
+                                }
+                            );
+                        } else {
+                            resolve(null);
+                        }
+                    }
+                );
             }
         );
     });
@@ -133,10 +229,27 @@ async function loadSnapshot(fileId, branchId = 'main') {
 async function saveSnapshot(fileId, branchId = 'main', data) {
     const safeFileId = fileId.replace(/[^a-zA-Z0-9_:-]/g, "");
     const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "") || 'main';
-    if (!safeFileId) return;
+    if (!safeFileId || !data) return;
+
+    const blobHash = computeBlobHash(data);
+    const sizeBytes = Buffer.byteLength(data, 'utf8');
+    const roomKey = `${safeFileId}::${safeBranchId}`;
 
     if (usePg && pgPool) {
         try {
+            await pgPool.query(
+                `INSERT INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
+                 VALUES ($1, $2, $3, FALSE, NOW())
+                 ON CONFLICT (hash) DO NOTHING`,
+                [blobHash, data, sizeBytes]
+            );
+            await pgPool.query(
+                `INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
+                 VALUES ($1, $2, NOW())
+                 ON CONFLICT (room_key) DO UPDATE
+                 SET blob_hash = EXCLUDED.blob_hash, updated_at = NOW()`,
+                [roomKey, blobHash]
+            );
             await pgPool.query(
                 `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
                  VALUES ($1, $2, $3, NOW())
@@ -150,16 +263,30 @@ async function saveSnapshot(fileId, branchId = 'main', data) {
         }
     }
 
-    sqliteDb.run(
-        `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(file_id, branch_id) DO UPDATE
-         SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`,
-        [safeFileId, safeBranchId, data],
-        (err) => {
-            if (err) console.error("[sqlite] saveSnapshot error:", err.message);
-        }
-    );
+    sqliteDb.serialize(() => {
+        sqliteDb.run(
+            `INSERT OR IGNORE INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
+             VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+            [blobHash, data, sizeBytes]
+        );
+        sqliteDb.run(
+            `INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
+             VALUES (?, ?, CURRENT_TIMESTAMP)
+             ON CONFLICT(room_key) DO UPDATE
+             SET blob_hash = excluded.blob_hash, updated_at = CURRENT_TIMESTAMP`,
+            [roomKey, blobHash]
+        );
+        sqliteDb.run(
+            `INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+             ON CONFLICT(file_id, branch_id) DO UPDATE
+             SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`,
+            [safeFileId, safeBranchId, data],
+            (err) => {
+                if (err) console.error("[sqlite] saveSnapshot error:", err.message);
+            }
+        );
+    });
 }
 
 const { createProxyMiddleware } = require("http-proxy-middleware");
@@ -167,7 +294,7 @@ const { createProxyMiddleware } = require("http-proxy-middleware");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    maxHttpBufferSize: 2e6,
+    maxHttpBufferSize: 8e6,  // 8 MB — encrypted Yjs snapshots can be large
     pingTimeout: 60000,
     pingInterval: 25000,
     cors: { origin: "*" }
@@ -216,15 +343,19 @@ server.on("upgrade", (req, socket, head) => {
 // ── Static Files & SPA Fallback ───────────────────────────────────────────
 const reactBuildPath = path.join(__dirname, "public_react");
 app.use(express.static(reactBuildPath, {
-    setHeaders: (res) => {
-        res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    setHeaders: (res, filePath) => {
+        if (filePath.includes("assets")) {
+            res.set("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+            res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        }
     }
 }));
 app.use(express.static("public"));
 app.use("/vendor/crypto-js", express.static(path.join(__dirname, "node_modules/crypto-js")));
 app.use("/vendor/yjs", express.static(path.join(__dirname, "node_modules/yjs/dist")));
 
-const MAX_UPDATE_SIZE = 512 * 1024;
+const MAX_UPDATE_SIZE = 8 * 1024 * 1024;  // 8 MB — raised from 512 KB; encrypted Yjs snapshots can be large
 const RATE_LIMIT_MS = 16;
 const MAX_PEERS = 32;
 
@@ -237,6 +368,24 @@ const lastUpdateAt = new Map();
 // In-memory last-snapshot cache: roomKey -> encryptedPayload
 // Updated on every y-snapshot event so reconnecting peers get instant state
 const lastSnapshotCache = new Map();
+// Debounce database disk persistence to avoid SQLite table locks during typing
+const pendingDbSaves = new Map();
+
+function scheduleDbSnapshot(fileId, branchId, payload) {
+    const key = `${fileId}::${branchId}`;
+    if (pendingDbSaves.has(key)) {
+        clearTimeout(pendingDbSaves.get(key));
+    }
+    const timer = setTimeout(async () => {
+        pendingDbSaves.delete(key);
+        try {
+            await saveSnapshot(fileId, branchId, payload);
+        } catch (err) {
+            console.error("[db] debounced saveSnapshot error:", err.message);
+        }
+    }, 1000);
+    pendingDbSaves.set(key, timer);
+}
 
 function broadcastPresence(fileId) {
     const members = roomMembers.get(fileId);
@@ -269,9 +418,11 @@ io.on("connection", (socket) => {
             ? branchId.replace(/[^a-zA-Z0-9_-]/g, '') || 'main'
             : 'main';
         const roomKey = `${fileId}::${safeBranchId}`;
+        const branchRoom = `branch::${safeBranchId}`;
         
         socket.join(roomKey);
-        peerInfo.set(socket.id, { fileId: roomKey, rawFileId: fileId, branchId: safeBranchId, name: "Peer", color: "#6366f1" });
+        socket.join(branchRoom);
+        peerInfo.set(socket.id, { fileId: roomKey, branchRoom, rawFileId: fileId, branchId: safeBranchId, name: "Peer", color: "#6366f1" });
         
         let members = roomMembers.get(roomKey);
         if (!members) {
@@ -291,14 +442,19 @@ io.on("connection", (socket) => {
         broadcastPresence(roomKey);
     });
 
-    socket.on("register-peer", ({ name, color }) => {
+    socket.on("register-peer", ({ name, color, userId }) => {
         const info = peerInfo.get(socket.id);
         if (!info) return;
 
         info.name = String(name || "Peer").slice(0, 32);
         info.color = String(color || "#6366f1").slice(0, 7);
+        info.userId = userId ? String(userId) : null;
         peerInfo.set(socket.id, info);
         
+        if (userId) {
+            socket.join(`user::${userId}`);
+        }
+
         broadcastPresence(info.fileId);
         
         // Notify others so they can initiate WebRTC
@@ -306,6 +462,36 @@ io.on("connection", (socket) => {
             id: socket.id,
             name: info.name
         });
+    });
+
+    socket.on("subroom-invite", ({ targetUserId, projectId, branchId, branchName, inviterName, inviterUserId }) => {
+        if (targetUserId) {
+            io.to(`user::${targetUserId}`).emit("subroom-invite-received", {
+                projectId,
+                branchId,
+                branchName,
+                inviterUserId: inviterUserId || (peerInfo.get(socket.id)?.userId),
+                inviterId: socket.id,
+                inviterName: inviterName || "A team member",
+                createdAt: new Date().toISOString()
+            });
+        }
+    });
+
+    socket.on("subroom-invite-response", ({ targetUserId, inviterUserId, inviterId, accepted, projectId, branchId, branchName, responderName }) => {
+        const payload = {
+            targetUserId,
+            accepted,
+            projectId,
+            branchId,
+            branchName,
+            responderName: responderName || "Peer"
+        };
+        if (inviterUserId) {
+            io.to(`user::${inviterUserId}`).emit("subroom-invite-response-received", payload);
+        } else if (inviterId) {
+            io.to(inviterId).emit("subroom-invite-response-received", payload);
+        }
     });
 
     socket.on("y-delta", (payload) => {
@@ -325,14 +511,22 @@ io.on("connection", (socket) => {
 
     socket.on("y-snapshot", async (payload) => {
         const info = peerInfo.get(socket.id);
-        if (!info) return;
+        if (!info) {
+            console.warn(`[y-snapshot] IGNORED — socket ${socket.id} not registered (join-file not yet processed)`);
+            return;
+        }
         
         if (!payload || typeof payload !== "string") return;
-        if (payload.length > MAX_UPDATE_SIZE) return;
+        if (payload.length > MAX_UPDATE_SIZE) {
+            console.warn(`[y-snapshot] DROPPED payload too large: ${payload.length} bytes (limit: ${MAX_UPDATE_SIZE}). Room: ${info.fileId}`);
+            return;
+        }
+
+        console.log(`[y-snapshot] saving room=${info.fileId} fileId=${info.rawFileId} branchId=${info.branchId} size=${payload.length}`);
 
         // Keep in-memory cache hot for instant reconnect delivery
         lastSnapshotCache.set(info.fileId, payload);
-        await saveSnapshot(info.rawFileId || info.fileId, info.branchId || 'main', payload);
+        scheduleDbSnapshot(info.rawFileId || info.fileId, info.branchId || 'main', payload);
     });
 
     socket.on("request-sync", async () => {
@@ -396,7 +590,8 @@ io.on("connection", (socket) => {
     socket.on("webrtc-join-call", () => {
         const info = peerInfo.get(socket.id);
         if (!info) return;
-        socket.to(info.fileId).emit("webrtc-join-call", {
+        const targetRoom = info.branchRoom || info.fileId;
+        socket.to(targetRoom).emit("webrtc-join-call", {
             senderId: socket.id
         });
     });

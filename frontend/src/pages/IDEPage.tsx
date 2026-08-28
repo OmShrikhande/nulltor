@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectsApi } from '../api/projects';
 import { branchesApi, type BranchRead } from '../api/branches';
@@ -9,7 +9,7 @@ import { useEditorStore } from '../store/editorStore';
 import { useAuthStore } from '../store/authStore';
 import { useDirectoryTree } from '../hooks/useDirectoryTree';
 import { directoriesApi, type DirectoryNode } from '../api/directories';
-import { useYjsDoc } from '../hooks/useYjsDoc';
+import { useYjsDoc, uint8ArrayToBase64, base64ToUint8Array } from '../hooks/useYjsDoc';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useCrypto } from '../hooks/useCrypto';
 import { FileTree } from '../components/ide/FileTree';
@@ -29,6 +29,7 @@ import { BotpressPanel } from '../components/ide/BotpressPanel';
 import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from '../components/shared/Toast';
+import { InviteSubroomModal } from '../components/ide/InviteSubroomModal';
 import { Rocket, GitMerge, Video, Users, Save, Bot, Mic, Lock, GitBranch, ListChecks, RefreshCw, ArrowDownCircle, Play } from 'lucide-react';
 
 const SALT = 'nulltor-static-salt-v1';
@@ -295,6 +296,14 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showMergeReview, setShowMergeReview] = useState(false);
   const [showPullSyncModal, setShowPullSyncModal] = useState(false);
+  const [showInviteSubroom, setShowInviteSubroom] = useState(false);
+  const [incomingInvite, setIncomingInvite] = useState<{
+    branchId: string;
+    branchName: string;
+    inviterName: string;
+    inviterUserId?: string;
+    inviterId?: string;
+  } | null>(null);
   const [pendingMergeCount, setPendingMergeCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionPrivateBranch, setSessionPrivateBranch] = useState(sessionStorage.getItem(`privatebranch-${projectId}`));
@@ -307,18 +316,73 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
   const { encrypt, decrypt } = useCrypto(passphrase, SALT);
 
-  const { doc, text, isConnected, peers, cursors, emitCursor, socket } = useYjsDoc({
+  const { doc, docRef, text, isConnected, peers, cursors, emitCursor, saveSnapshot, socket } = useYjsDoc({
     fileId: openFile?.id ?? '__none__',
     branchId: currentBranch?.id ?? 'main',
     encrypt,
     decrypt,
     username: user?.username ?? 'Anonymous',
+    userId: user?.id,
     color: '#01EFAC',
   });
 
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleManualSave = useCallback(() => {
+    if (!openFile) {
+      toast('No file open to save', 'info');
+      return;
+    }
+    setIsSaving(true);
+    const success = saveSnapshot();
+    useEditorStore.getState().setDirty(false);
+    setTimeout(() => {
+      setIsSaving(false);
+      if (success !== false) {
+        toast(`✓ Saved ${openFile.name}`, 'success');
+      } else {
+        toast(`Failed to save ${openFile.name}`, 'error');
+      }
+    }, 250);
+  }, [openFile, saveSnapshot]);
+
+  // Global Keyboard Shortcut for Ctrl+S / Cmd+S
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleManualSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleManualSave]);
+
+  // Listen for real-time subroom invitations from peers
+  useEffect(() => {
+    if (!socket) return;
+    const handleInvite = (data: {
+      projectId: string;
+      branchId: string;
+      branchName: string;
+      inviterName: string;
+      inviterUserId?: string;
+      inviterId?: string;
+    }) => {
+      if (data.projectId === projectId) {
+        setIncomingInvite(data);
+        toast(`${data.inviterName} invited you to join subroom "${data.branchName}"!`, 'info');
+      }
+    };
+    socket.on('subroom-invite-received', handleInvite);
+    return () => {
+      socket.off('subroom-invite-received', handleInvite);
+    };
+  }, [socket, projectId]);
+
   const { localStream, remoteStreams, isMuted, isVideoActive, startCall, toggleMute, leaveCall } = useWebRTC(
     socket,
-    `${openFile?.id ?? '__none__'}::${currentBranch?.id || 'main'}`
+    `${projectId}::${currentBranch?.id || 'main'}`
   );
 
   const { tree, loading: treeLoading, refresh: refreshTree } = useDirectoryTree(
@@ -428,7 +492,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         return await res.json();
       },
       getActiveFile: () => openFile?.name || null,
-      getActiveCode: () => editorValue,
+      getActiveCode: () => text?.toString() || editorValue,
       getProjectId: () => projectId,
       getBranchId: () => currentBranch?.id || null,
     };
@@ -475,13 +539,14 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   }
 
   async function handlePullSyncComplete(newSnapshotBase64?: string | null) {
-    if (newSnapshotBase64 && doc) {
+    const liveDoc = docRef.current;
+    if (newSnapshotBase64 && liveDoc) {
       try {
         const decrypted = decrypt(newSnapshotBase64);
         const newCode = extractTextFromYjsSnapshot(decrypted);
         if (newCode) {
-          const ytext = doc.getText('content').length > 0 ? doc.getText('content') : doc.getText('monaco');
-          doc.transact(() => {
+          const ytext = liveDoc.getText('content').length > 0 ? liveDoc.getText('content') : liveDoc.getText('monaco');
+          liveDoc.transact(() => {
             ytext.delete(0, ytext.length);
             ytext.insert(0, newCode);
           });
@@ -496,13 +561,14 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   }
 
   async function handleCommitRequest() {
-    if (!openFile || !currentBranch || !doc) return;
-    const msg = window.prompt("Enter commit message for this revision:");
+    const liveDoc = docRef.current;
+    if (!openFile || !currentBranch || !liveDoc) return;
+    const msg = window.prompt(`Enter commit message for ${openFile.name}:`);
     if (!msg) return;
 
     try {
-      const update = Y.encodeStateAsUpdate(doc);
-      const b64 = btoa(String.fromCharCode(...update));
+      const update = Y.encodeStateAsUpdate(liveDoc);
+      const b64 = uint8ArrayToBase64(update);
       const encryptedSnapshot = encrypt(b64);
 
       await commitsApi.createCommit(projectId!, {
@@ -511,13 +577,44 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         message: msg,
         snapshot: encryptedSnapshot
       });
-      toast("Committed revision successfully", "success");
+      toast(`Committed revision for ${openFile.name}`, "success");
       if (activeTab !== 'git') {
         setActiveTab('git');
       }
     } catch (e: any) {
       console.error(e);
       toast(e?.message || "Failed to commit revision", "error");
+    }
+  }
+
+  async function handleCommitWorkspaceRequest() {
+    const liveDoc = docRef.current;
+    if (!currentBranch || !projectId) return;
+    const msg = window.prompt("Enter commit message for workspace revision:");
+    if (!msg) return;
+
+    try {
+      let count = 0;
+      if (openFile && liveDoc) {
+        const update = Y.encodeStateAsUpdate(liveDoc);
+        const b64 = uint8ArrayToBase64(update);
+        const encryptedSnapshot = encrypt(b64);
+
+        await commitsApi.createCommit(projectId, {
+          branch_id: currentBranch.id,
+          file_id: openFile.id,
+          message: `📦 Workspace: ${msg}`,
+          snapshot: encryptedSnapshot
+        });
+        count++;
+      }
+      toast(`Committed workspace snapshot (${count} file${count === 1 ? '' : 's'})`, "success");
+      if (activeTab !== 'git') {
+        setActiveTab('git');
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast(e?.message || "Failed to commit workspace", "error");
     }
   }
 
@@ -575,18 +672,18 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
       setEditorValue(text.toString());
     }
 
-    const handler = () => setEditorValue(text.toString());
+    const handler = (event: Y.YTextEvent) => {
+      // Don't re-render React on our own local typing since Monaco handles it with zero latency
+      if (event.transaction.origin === 'local-monaco') return;
+      setEditorValue(text.toString());
+    };
     text.observe(handler);
     return () => text.unobserve(handler);
   }, [text, doc, openFile]);
 
-  function handleEditorChange(val: string) {
-    if (!text || !doc) return;
-    if (val === text.toString()) return;
-    doc.transact(() => {
-      text.delete(0, text.length);
-      text.insert(0, val);
-    }, 'local');
+  function handleEditorChange(_val: string) {
+    // Keystroke changes are already applied atomically to Y.Text via Monaco's onDidChangeModelContent!
+    // No full delete & insert wipe needed here!
   }
 
   async function handleApplyAgentCode(fileName: string, code: string) {
@@ -703,35 +800,25 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   return (
     <div className="ide-container">
       {/* Top Global Project Session & Room Header */}
-      <header className="nexus-topbar">
-        <div className="nexus-topbar-left">
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => navigate('/dashboard')}
-            title="Menu"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={16} height={16}>
-              <line x1="3" y1="12" x2="21" y2="12"></line>
-              <line x1="3" y1="6" x2="21" y2="6"></line>
-              <line x1="3" y1="18" x2="21" y2="18"></line>
-            </svg>
-          </button>
-
-          <NulltorLogo size="sm" showText={false} />
-        </div>
-
-        <div className="nexus-topbar-center">
-          <div className="nexus-topbar-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width={14} height={14}>
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input type="text" placeholder={currentProject?.name ?? 'Search Project'} />
+      <header className="nexus-topbar" style={{
+        height: '46px',
+        background: '#111215',
+        borderBottom: '1px solid #1f2128',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        gap: '12px'
+      }}>
+        {/* Left Section: Logo + Branch Pill + Live Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => navigate('/dashboard')} title="Back to Dashboard">
+            <NulltorLogo size="sm" showText={true} />
           </div>
-        </div>
 
-        <div className="nexus-topbar-right">
-          {/* Integrated Subroom Selector & Creator */}
+          <div style={{ width: '1px', height: '18px', background: '#252830' }}></div>
+
+          {/* Branch Pill */}
           <BranchSelector
             branches={branches}
             currentBranch={currentBranch}
@@ -739,152 +826,212 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             onBranchChange={handleBranchChange}
             onRefresh={handleBranchRefresh}
           />
-          {/* Sleek Live Collaborator Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--bg-2)', padding: '4px 8px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#3b82f6', boxShadow: '0 0 6px #3b82f6' }}></span>
-            LIVE ({peers.length + 1})
+
+          {/* Live Peer Indicator matching Mockup */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#10b981',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            background: 'rgba(16, 185, 129, 0.08)',
+          }}>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: '#10b981',
+              boxShadow: '0 0 8px #10b981',
+              display: 'inline-block'
+            }}></span>
+            {peers.length + 1} live
           </div>
+        </div>
 
+        {/* Right Actions: High-Contrast Run + Ghost Pull + Ghost Merge/PR + Icons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Primary High-Contrast Run Button */}
           <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => toast('Saved state encrypted locally', 'success')}
-            title="Save file state"
-            style={{ padding: '4px 8px' }}
-          >
-            <Save size={16} />
-          </button>
-
-          {/* Solid Sapphire Blue Run Button */}
-          <button
-            className="btn btn-sm"
             onClick={() => setRunTrigger((t) => t + 1)}
             disabled={isRunning}
             title={isRunning ? 'Executing code in sandbox...' : 'Execute Code (Run)'}
             style={{
-              padding: '4px 14px',
-              color: '#ffffff',
-              display: 'flex',
+              padding: '6px 18px',
+              color: '#000000',
+              background: '#ffffff',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               fontWeight: 700,
-              fontSize: '12px',
-              border: '1px solid #1d4ed8',
-              background: isRunning ? 'rgba(37, 99, 235, 0.6)' : '#2563eb',
-              borderRadius: '6px',
-              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)',
+              fontSize: '12.5px',
+              border: 'none',
+              borderRadius: '20px',
               cursor: isRunning ? 'wait' : 'pointer',
+              boxShadow: '0 1px 4px rgba(255, 255, 255, 0.2)',
               transition: 'all 0.15s ease',
             }}
           >
             {isRunning ? (
               <>
-                <RefreshCw size={13} className="spin" />
+                <RefreshCw size={13} className="spin" color="#000000" />
                 <span>Running...</span>
               </>
             ) : (
               <>
-                <Play size={13} fill="currentColor" />
+                <Play size={13} fill="#000000" color="#000000" />
                 <span>Run</span>
               </>
             )}
           </button>
 
+          {/* Dedicated Save Button */}
           <button
-            className={`btn btn-sm ${showTeamDrawer ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={() => {
-              setShowTeamDrawer(!showTeamDrawer);
-              if (!showTeamDrawer) setShowAgentPanel(false);
-            }}
-            title="Toggle Team & Subrooms"
-            style={{ padding: '4px 8px', borderRadius: '6px' }}
-          >
-            <Users size={16} />
-          </button>
-
-          <button
-            className={`btn btn-sm ${showAgentPanel ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={() => {
-              setShowAgentPanel(!showAgentPanel);
-              if (!showAgentPanel) setShowTeamDrawer(false);
-            }}
-            title={showAgentPanel ? "Hide Agent Assistant" : "Open Agent Assistant"}
+            onClick={handleManualSave}
+            disabled={!openFile || isSaving}
+            title={openFile ? `Save ${openFile.name} (Ctrl+S)` : 'Save File (Ctrl+S)'}
             style={{
-              padding: '4px 8px',
-              background: showAgentPanel ? 'rgba(37, 99, 235, 0.15)' : undefined,
-              color: showAgentPanel ? '#3b82f6' : undefined,
-              border: showAgentPanel ? '1px solid rgba(37, 99, 235, 0.4)' : undefined,
-              borderRadius: '6px',
-            }}
-          >
-            <Bot size={16} />
-          </button>
-
-          {/* Pull / Sync Button — Sapphire Blue Accents */}
-          <button
-            className="btn btn-sm"
-            style={{
-              padding: '4px 10px',
-              background: 'rgba(37, 99, 235, 0.12)',
-              border: '1px solid rgba(37, 99, 235, 0.35)',
-              color: '#60a5fa',
-              fontWeight: 700,
-              fontSize: '11.5px',
-              display: 'flex',
+              padding: '6px 14px',
+              background: '#18191e',
+              border: '1px solid #2a2d36',
+              color: openFile ? '#38bdf8' : '#64748b',
+              fontWeight: 600,
+              fontSize: '12px',
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: 5,
-              borderRadius: '6px',
+              gap: '6px',
+              borderRadius: '8px',
+              cursor: openFile ? 'pointer' : 'not-allowed',
               transition: 'all 0.15s ease',
             }}
-            title={`Pull / Sync updates from another branch into ${currentBranch?.name ?? 'current branch'}`}
+          >
+            {isSaving ? (
+              <>
+                <RefreshCw size={13} className="spin" color="#38bdf8" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Save size={13} color={openFile ? '#38bdf8' : '#64748b'} />
+                <span>Save</span>
+              </>
+            )}
+          </button>
+
+          {/* Secondary Ghost Pull / Sync Button */}
+          <button
             onClick={() => setShowPullSyncModal(true)}
-          >
-            <ArrowDownCircle size={14} /> Pull / Sync
-          </button>
-
-          {/* Submit PR / Merge Modal — Sapphire Blue Accents */}
-          <button
-            className="btn btn-sm"
+            title={`Pull updates from another branch into ${currentBranch?.name ?? 'current branch'}`}
             style={{
-              padding: '4px 10px',
-              background: 'rgba(37, 99, 235, 0.12)',
-              border: '1px solid rgba(37, 99, 235, 0.35)',
-              color: '#60a5fa',
-              fontWeight: 700,
-              fontSize: '11.5px',
-              display: 'flex',
+              padding: '6px 14px',
+              background: '#18191e',
+              border: '1px solid #2a2d36',
+              color: '#e2e8f0',
+              fontWeight: 600,
+              fontSize: '12px',
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: 5,
-              borderRadius: '6px',
+              gap: '6px',
+              borderRadius: '8px',
+              cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
-            title="Submit Merge / Pull Request"
-            onClick={() => setShowMergeModal(true)}
           >
-            <GitMerge size={14} /> Merge / PR
+            <ArrowDownCircle size={14} color="#94a3b8" />
+            <span>Pull</span>
           </button>
 
-          {/* Review button — visible to admins/leads with pending count badge */}
+          {/* Secondary Ghost Merge / PR Button */}
+          <button
+            onClick={() => setShowMergeModal(true)}
+            title="Submit Merge / Pull Request"
+            style={{
+              padding: '6px 14px',
+              background: '#18191e',
+              border: '1px solid #2a2d36',
+              color: '#e2e8f0',
+              fontWeight: 600,
+              fontSize: '12px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <GitMerge size={14} color="#94a3b8" />
+            <span>Merge / PR</span>
+          </button>
+
+          <div style={{ width: '1px', height: '18px', background: '#252830', margin: '0 2px' }}></div>
+
+          {/* Review PR Button with Tooltip */}
           {canReview && (
             <button
               className="btn btn-ghost btn-sm"
-              style={{ padding: '4px 8px', position: 'relative' }}
-              title="Review Merge Requests"
+              style={{ padding: '6px 8px', position: 'relative', borderRadius: '6px', color: '#94a3b8' }}
+              title="Review Pending Merge Requests"
               onClick={() => { setShowMergeReview(true); setPendingMergeCount(0); }}
             >
               <ListChecks size={16} />
               {pendingMergeCount > 0 && (
-                <span style={{ position: 'absolute', top: 0, right: 0, width: 14, height: 14, background: '#fbbf24', borderRadius: '50%', fontSize: 9, fontWeight: 800, color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, background: '#f59e0b', borderRadius: '50%', fontSize: 9, fontWeight: 800, color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {pendingMergeCount}
                 </span>
               )}
             </button>
           )}
 
-          <button className="theme-toggle-btn" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>
+          {/* Team Toggle Button with Tooltip */}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setShowTeamDrawer(!showTeamDrawer);
+              if (!showTeamDrawer) setShowAgentPanel(false);
+            }}
+            title="Team & Collaborators"
+            style={{
+              padding: '6px 8px',
+              borderRadius: '6px',
+              color: showTeamDrawer ? '#3b82f6' : '#94a3b8',
+              background: showTeamDrawer ? 'rgba(59, 130, 246, 0.15)' : 'transparent'
+            }}
+          >
+            <Users size={16} />
+          </button>
+
+          {/* Agent Toggle Button with Tooltip */}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setShowAgentPanel(!showAgentPanel);
+              if (!showAgentPanel) setShowTeamDrawer(false);
+            }}
+            title="Toggle Agent Assistant"
+            style={{
+              padding: '6px 8px',
+              borderRadius: '6px',
+              color: showAgentPanel ? '#3b82f6' : '#94a3b8',
+              background: showAgentPanel ? 'rgba(59, 130, 246, 0.15)' : 'transparent'
+            }}
+          >
+            <Bot size={16} />
+          </button>
+
+          {/* Theme Toggle Button with Tooltip */}
+          <button
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            style={{ padding: '6px 8px', borderRadius: '6px', color: '#94a3b8' }}
+          >
             {theme === 'dark' ? (
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
             ) : (
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
             )}
           </button>
         </div>
@@ -935,17 +1082,19 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               fileName={openFile.name}
               passphrase={passphrase}
               getCurrentSnapshot={() => {
-                if (!doc) return null;
+                const liveDoc = docRef.current;
+                if (!liveDoc) return null;
                 try {
-                  const update = Y.encodeStateAsUpdate(doc);
-                  const b64 = btoa(String.fromCharCode(...update));
+                  const update = Y.encodeStateAsUpdate(liveDoc);
+                  const b64 = uint8ArrayToBase64(update);
                   return encrypt(b64);
                 } catch { return null; }
               }}
               onRestore={(snapshotBase64) => {
-                if (!doc || !text) return;
+                const liveDoc = docRef.current;
+                if (!liveDoc) return;
                 try {
-                  const uint8Array = new Uint8Array(atob(snapshotBase64).split('').map(c => c.charCodeAt(0)));
+                  const uint8Array = base64ToUint8Array(snapshotBase64);
                   const tempDoc = new Y.Doc();
                   Y.applyUpdate(tempDoc, uint8Array);
 
@@ -954,8 +1103,9 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
                   else if (tempDoc.getText('monaco').length > 0) restoredText = tempDoc.getText('monaco').toString();
 
                   if (restoredText) {
-                    text.delete(0, text.length);
-                    text.insert(0, restoredText);
+                    const liveText = liveDoc.getText('content');
+                    liveText.delete(0, liveText.length);
+                    liveText.insert(0, restoredText);
                     setEditorValue(restoredText);
                   }
                 } catch (e) {
@@ -988,10 +1138,14 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             onRunStateChange={setIsRunning}
             onCommitRequest={handleCommitRequest}
             projectId={projectId}
+            projectName={currentProject?.name}
             branchId={currentBranch?.id}
             fileId={openFile?.id}
-            getDoc={() => doc}
+            tree={tree}
+            getDoc={() => docRef.current}
             decrypt={decrypt}
+            onSave={handleManualSave}
+            isSaving={isSaving}
           />
         </div>
 
@@ -1137,14 +1291,20 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               </div>
             </div>
 
-            <button className="btn btn-primary btn-full" onClick={() => {
-              if (navigator.clipboard) {
-                navigator.clipboard.writeText(window.location.href);
-                toast('Room session invite link copied to clipboard', 'success');
-              } else {
-                toast('Clipboard API not available. Copy the URL from your browser.', 'error');
-              }
-            }}>
+            <button
+              className="btn btn-primary btn-full"
+              onClick={() => setShowInviteSubroom(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                fontWeight: 700,
+                fontSize: '12.5px',
+                padding: '8px 14px',
+                borderRadius: '8px',
+              }}
+            >
               + Invite Peer to Subroom
             </button>
           </div>
@@ -1167,6 +1327,113 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         peerCount={peers.length}
         branchName={currentBranch?.name}
       />
+
+      {/* Real-Time Incoming Subroom Invitation Permission Dialog */}
+      {incomingInvite && (
+        <div style={{
+          position: 'fixed',
+          top: '56px',
+          right: '24px',
+          zIndex: 9999,
+          background: '#15161a',
+          border: '1px solid #3b82f6',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(59, 130, 246, 0.25)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          maxWidth: '380px',
+          animation: 'slideDown 0.25s ease',
+        }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#3b82f6' }}>🤝</span> Subroom Invitation Request
+            </div>
+            <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '6px', lineHeight: '1.45' }}>
+              <strong style={{ color: '#60a5fa' }}>{incomingInvite.inviterName}</strong> has invited you to join subroom <strong style={{ color: '#f8fafc' }}>"{incomingInvite.branchName}"</strong>. Do you want to join this collaboration session?
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => {
+                if (socket && incomingInvite) {
+                  socket.emit('subroom-invite-response', {
+                    targetUserId: user?.id,
+                    inviterUserId: incomingInvite.inviterUserId,
+                    inviterId: incomingInvite.inviterId,
+                    accepted: false,
+                    projectId,
+                    branchId: incomingInvite.branchId,
+                    branchName: incomingInvite.branchName,
+                    responderName: user?.username || 'Peer',
+                  });
+                }
+                setIncomingInvite(null);
+                toast(`Invitation to "${incomingInvite.branchName}" declined.`, 'info');
+              }}
+              style={{ fontSize: '12px', padding: '6px 12px', borderRadius: '6px' }}
+            >
+              Decline
+            </button>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={async () => {
+                const invite = incomingInvite;
+                if (!invite) return;
+
+                // Grant self-membership in subroom if not main
+                if (invite.branchId && invite.branchId !== 'main' && user?.id) {
+                  try {
+                    await branchesApi.addMember(projectId, invite.branchId, user.id);
+                  } catch (_) {}
+                }
+
+                if (socket) {
+                  socket.emit('subroom-invite-response', {
+                    targetUserId: user?.id,
+                    inviterUserId: invite.inviterUserId,
+                    inviterId: invite.inviterId,
+                    accepted: true,
+                    projectId,
+                    branchId: invite.branchId,
+                    branchName: invite.branchName,
+                    responderName: user?.username || 'Peer',
+                  });
+                }
+                
+                await handleBranchRefresh();
+                const target = branches.find(b => b.id === invite.branchId);
+                if (target) {
+                  handleBranchChange(target);
+                }
+                setIncomingInvite(null);
+                toast(`Joined subroom "${invite.branchName}"!`, 'success');
+              }}
+              style={{ fontSize: '12px', padding: '6px 16px', borderRadius: '6px', fontWeight: 700 }}
+            >
+              Accept & Join
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showInviteSubroom && (
+        <InviteSubroomModal
+          isOpen={showInviteSubroom}
+          projectId={projectId!}
+          branchId={currentBranch?.id ?? 'main'}
+          branchName={currentBranch?.name ?? 'main'}
+          currentUserId={user?.id}
+          inviterName={user?.username}
+          socket={socket}
+          onClose={() => setShowInviteSubroom(false)}
+          onMemberAdded={() => {
+            handleBranchRefresh();
+          }}
+        />
+      )}
 
       {showBranchPrompt && (
         <CreateBranchModal
@@ -1193,7 +1460,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             if (!doc) return null;
             try {
               const update = Y.encodeStateAsUpdate(doc);
-              const b64 = btoa(String.fromCharCode(...update));
+              const b64 = uint8ArrayToBase64(update);
               return encrypt(b64);
             } catch { return null; }
           }}
@@ -1213,7 +1480,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             if (!doc) return null;
             try {
               const update = Y.encodeStateAsUpdate(doc);
-              const b64 = btoa(String.fromCharCode(...update));
+              const b64 = uint8ArrayToBase64(update);
               return encrypt(b64);
             } catch { return null; }
           }}

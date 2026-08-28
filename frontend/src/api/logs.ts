@@ -3,6 +3,7 @@ import { get } from './client';
 export interface AuditLogRead {
   id: string;
   actor_id: string | null;
+  actor_username?: string | null;
   project_id: string | null;
   branch_id: string | null;
   resource_type: string;

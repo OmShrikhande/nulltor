@@ -2,8 +2,9 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from pydantic import BaseModel
+import json
 
 from core.database import get_db
 from core.security import get_password_hash
@@ -14,6 +15,51 @@ from schemas.user import UserCreate, UserRead, UserUpdate, UserList
 from services.audit_service import log_action
 
 router = APIRouter()
+
+
+@router.get("/me/preferences", summary="Get current user preferences")
+async def get_my_preferences(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        res = await db.execute(
+            text("SELECT preferences_json FROM user_preferences WHERE user_id = :uid"),
+            {"uid": str(user.id)}
+        )
+        row = res.fetchone()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception:
+        pass
+    return {}
+
+
+@router.put("/me/preferences", summary="Update current user preferences")
+async def update_my_preferences(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    pref_str = json.dumps(payload)
+    try:
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                user_id VARCHAR(64) PRIMARY KEY,
+                preferences_json TEXT NOT NULL DEFAULT '{}',
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        await db.execute(text("""
+            INSERT INTO user_preferences (user_id, preferences_json, updated_at)
+            VALUES (:uid, :pref, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id) DO UPDATE
+            SET preferences_json = EXCLUDED.preferences_json, updated_at = CURRENT_TIMESTAMP
+        """), {"uid": str(user.id), "pref": pref_str})
+        await db.commit()
+    except Exception as e:
+        print("Save preferences error:", e)
+    return payload
 
 
 class UserSearchResult(BaseModel):

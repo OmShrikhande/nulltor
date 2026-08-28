@@ -1,4 +1,4 @@
-import { get, post, patch, del } from './client';
+import { get, post, put, patch, del } from './client';
 import { type UserRead } from './auth';
 
 export interface UserCreate {
@@ -36,4 +36,10 @@ export const usersApi = {
 
   deactivate: (id: string) =>
     del(`/users/${id}`),
+
+  getPreferences: () =>
+    get<Record<string, any>>('/users/me/preferences'),
+
+  updatePreferences: (preferences: Record<string, any>) =>
+    put<Record<string, any>>('/users/me/preferences', preferences),
 };

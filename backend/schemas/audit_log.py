@@ -42,6 +42,7 @@ class ResourceType(str, enum.Enum):
 class AuditLogRead(BaseModel):
     id: uuid.UUID
     actor_id: Optional[uuid.UUID]
+    actor_username: Optional[str] = None
     project_id: Optional[uuid.UUID]
     branch_id: Optional[uuid.UUID]
     resource_type: ResourceType

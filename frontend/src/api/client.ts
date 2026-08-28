@@ -169,5 +169,6 @@ export async function apiRequest<T = unknown>(
 
 export const get = <T>(path: string) => apiRequest<T>('GET', path);
 export const post = <T>(path: string, body?: unknown) => apiRequest<T>('POST', path, body);
+export const put = <T>(path: string, body?: unknown) => apiRequest<T>('PUT', path, body);
 export const patch = <T>(path: string, body?: unknown) => apiRequest<T>('PATCH', path, body);
 export const del = <T = void>(path: string) => apiRequest<T>('DELETE', path);

@@ -26,7 +26,7 @@ async def list_logs(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    q = select(AuditLog)
+    q = select(AuditLog, User.username).outerjoin(User, AuditLog.actor_id == User.id)
 
     # Data isolation: non-superadmins can only see logs for their projects
     if user.role != UserRole.superadmin:
@@ -53,11 +53,21 @@ async def list_logs(
     result = await db.execute(
         q.order_by(AuditLog.created_at.desc()).offset(offset).limit(page_size)
     )
-    logs = result.scalars().all()
+    rows = result.all()
+    items = []
+    for log, uname in rows:
+        item = AuditLogRead.model_validate(log)
+        item.actor_username = (
+            uname
+            or (log.detail.get("username") if isinstance(log.detail, dict) else None)
+            or (log.detail.get("email") if isinstance(log.detail, dict) else None)
+            or "superadmin"
+        )
+        items.append(item)
 
     return AuditLogList(
         total=total,
         page=page,
         page_size=page_size,
-        items=[AuditLogRead.model_validate(log) for log in logs],
+        items=items,
     )

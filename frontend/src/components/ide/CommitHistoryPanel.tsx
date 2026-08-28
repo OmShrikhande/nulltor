@@ -129,11 +129,11 @@ export function CommitHistoryPanel({
           leftLabel="Current Working Code (Left)"
           rightLabel="Past Commit Target (Right)"
           originalSnapshotBase64={getCurrentSnapshot()}
-          modifiedSnapshotBase64={decryptSnapshot(diffCommit.snapshot)}
+          modifiedSnapshotBase64={decryptSnapshot(diffCommit.snapshot || '')}
           confirmLabel="Revert to this version"
           onClose={() => setDiffCommit(null)}
           onConfirm={() => {
-            onRevert(decryptSnapshot(diffCommit.snapshot));
+            onRevert(decryptSnapshot(diffCommit.snapshot || ''));
             setDiffCommit(null);
             onClose();
             toast('File reverted successfully', 'success');
