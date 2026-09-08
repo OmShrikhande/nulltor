@@ -43,6 +43,7 @@ interface UseYjsDocResult {
   emitCursor: (line: number, column: number) => void;
   saveSnapshot: () => boolean;
   socket: Socket | null;
+  decryptionError: boolean;
 }
 
 // Safe chunked Base64 encoding/decoding to prevent call stack size exceeded errors
@@ -80,11 +81,13 @@ export function useYjsDoc({
   const [peers, setPeers] = useState<Peer[]>([]);
   const [cursors, setCursors] = useState<RemoteCursor[]>([]);
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
+  const [decryptionError, setDecryptionError] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   // Always-current refs so saveSnapshot never captures a stale closure
   const docRef = useRef<Y.Doc | null>(null);
   const encryptRef = useRef<(plaintext: string) => string>(encrypt);
+  const decryptionErrorRef = useRef(false);
 
   // Keep encryptRef in sync every render
   encryptRef.current = encrypt;
@@ -95,6 +98,10 @@ export function useYjsDoc({
   const roomKey = `${effectiveFileId}::${effectiveBranchId}`;
 
   useEffect(() => {
+    // Reset decryption error state on room/file switch
+    setDecryptionError(false);
+    decryptionErrorRef.current = false;
+
     // Create Yjs document for real files
     let newDoc: Y.Doc | null = null;
     if (isRealFile) {
@@ -108,7 +115,7 @@ export function useYjsDoc({
 
     let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
     const flushSnapshot = () => {
-      if (!newDoc || !socketRef.current) return;
+      if (!newDoc || !socketRef.current || decryptionErrorRef.current) return;
       try {
         const fullUpdate = Y.encodeStateAsUpdate(newDoc);
         const fullB64 = uint8ArrayToBase64(fullUpdate);
@@ -117,14 +124,39 @@ export function useYjsDoc({
       } catch (_) {}
     };
 
-    // Connect to Node.js Socket.IO server with explicit reconnection settings
+    const applyEncryptedSnapshot = (rawSnapshot: string) => {
+      if (!rawSnapshot || !newDoc) return;
+      try {
+        const decrypted = decrypt(rawSnapshot);
+        setDecryptionError(false);
+        decryptionErrorRef.current = false;
+        try {
+          const update = base64ToUint8Array(decrypted);
+          Y.applyUpdate(newDoc, update);
+        } catch {
+          const ytext = newDoc.getText('content');
+          newDoc.transact(() => {
+            ytext.delete(0, ytext.length);
+            ytext.insert(0, decrypted);
+          }, 'local');
+        }
+      } catch (err: any) {
+        console.error('[Yjs] Decryption failed — invalid passphrase or corrupted payload:', err?.message);
+        setDecryptionError(true);
+        decryptionErrorRef.current = true;
+        // Guard: DO NOT dump raw ciphertext into Monaco!
+      }
+    };
+
+    // Connect to Node.js Socket.IO server with aggressive self-healing reconnection settings
     const socket = io('/', {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 8000,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 4000,
+      timeout: 10000,
     });
     socketRef.current = socket;
     setActiveSocket(socket);
@@ -133,6 +165,10 @@ export function useYjsDoc({
       setIsConnected(true);
       // Re-join and re-sync on every connect
       socket.emit('join-file', { fileId: effectiveFileId, branchId: effectiveBranchId });
+      socket.emit('register-peer', { name: username, color, userId });
+      if (isRealFile) {
+        socket.emit('request-sync');
+      }
     });
 
     socket.on('disconnect', () => {
@@ -143,35 +179,48 @@ export function useYjsDoc({
     // Receive approved event: load snapshot and register peer
     socket.on('approved', ({ snapshot }: { snapshot: string | null }) => {
       if (snapshot && newDoc) {
-        try {
-          let isPlaintext = false;
-          let updateStr = "";
-          try {
-            updateStr = decrypt(snapshot);
-          } catch (err) {
-            isPlaintext = true;
-            updateStr = snapshot;
-          }
-          if (isPlaintext) {
-            const ytext = newDoc.getText('content');
-            newDoc.transact(() => {
-              ytext.delete(0, ytext.length);
-              ytext.insert(0, updateStr);
-            }, 'local');
-          } else {
-            const update = base64ToUint8Array(updateStr);
-            Y.applyUpdate(newDoc, update);
-          }
-        } catch (_) {
-          // ignore
-        }
+        applyEncryptedSnapshot(snapshot);
       }
       socket.emit('register-peer', { name: username, color, userId });
+      // If we have local edits that accumulated while disconnected, flush them now
+      if (newDoc && newDoc.getText('content').length > 0) {
+        flushSnapshot();
+      }
     });
+
+    // Auto-wake & reconnect on window focus / tab visibility change (after laptop sleep or tab inactive)
+    const handleWakeup = () => {
+      if (document.visibilityState === 'visible') {
+        if (!socket.connected) {
+          console.log('[Yjs] Tab active after inactivity/sleep — restoring socket connection...');
+          socket.connect();
+        } else {
+          // Re-verify room membership and sync
+          socket.emit('join-file', { fileId: effectiveFileId, branchId: effectiveBranchId });
+          socket.emit('register-peer', { name: username, color, userId });
+          if (isRealFile) {
+            socket.emit('request-sync');
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+    window.addEventListener('online', handleWakeup);
+
+    // Periodic lightweight heartbeat (every 30s) to prevent browser background timer death
+    const heartbeatTimer = setInterval(() => {
+      if (socket.connected && document.visibilityState === 'visible') {
+        socket.emit('register-peer', { name: username, color, userId });
+      } else if (!socket.connected && document.visibilityState === 'visible') {
+        socket.connect();
+      }
+    }, 30000);
 
     // Receive delta from other peers
     socket.on('y-delta', (payload: string) => {
-      if (!newDoc) return;
+      if (!newDoc || decryptionErrorRef.current) return;
       try {
         const decrypted = decrypt(payload);
         const update = base64ToUint8Array(decrypted);
@@ -181,32 +230,14 @@ export function useYjsDoc({
 
     // Sync response (full snapshot from another peer)
     socket.on('sync-response', ({ snapshot }: { snapshot: string }) => {
-      if (!newDoc) return;
-      try {
-        let isPlaintext = false;
-        let updateStr = "";
-        try {
-          updateStr = decrypt(snapshot);
-        } catch (err) {
-          isPlaintext = true;
-          updateStr = snapshot;
-        }
-        if (isPlaintext) {
-          const ytext = newDoc.getText('content');
-          newDoc.transact(() => {
-            ytext.delete(0, ytext.length);
-            ytext.insert(0, updateStr);
-          }, 'local');
-        } else {
-          const update = base64ToUint8Array(updateStr);
-          Y.applyUpdate(newDoc, update);
-        }
-      } catch (_) {}
+      if (snapshot && newDoc) {
+        applyEncryptedSnapshot(snapshot);
+      }
     });
 
     // Someone needs our snapshot
     socket.on('sync-needed', ({ requesterId }: { requesterId: string }) => {
-      if (!newDoc) return;
+      if (!newDoc || decryptionErrorRef.current) return;
       try {
         const update = Y.encodeStateAsUpdate(newDoc);
         const b64 = uint8ArrayToBase64(update);
@@ -215,8 +246,10 @@ export function useYjsDoc({
       } catch (_) {}
     });
 
-    // Peer presence
-    socket.on('presence', ({ peers: p }: { peers: Peer[] }) => setPeers(p));
+    // Peer presence (filter out local user so peers only reflects remote collaborators)
+    socket.on('presence', ({ peers: p }: { peers: Peer[] }) => {
+      setPeers((p || []).filter((peer) => peer.id !== socket.id));
+    });
     socket.on('peer-left', ({ id }: { id: string }) => {
       setPeers((prev) => prev.filter((p) => p.id !== id));
       setCursors((prev) => prev.filter((c) => c.socketId !== id));
@@ -250,6 +283,10 @@ export function useYjsDoc({
     }
 
     return () => {
+      clearInterval(heartbeatTimer);
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
+      window.removeEventListener('online', handleWakeup);
       if (snapshotTimer) {
         clearTimeout(snapshotTimer);
         flushSnapshot();
@@ -276,7 +313,7 @@ export function useYjsDoc({
     // Use refs so we always get the LIVE doc and encrypt fn, not stale closure values
     const liveDoc = docRef.current;
     const liveSocket = socketRef.current;
-    if (!liveDoc || !liveSocket) return false;
+    if (!liveDoc || !liveSocket || decryptionErrorRef.current) return false;
     try {
       const fullUpdate = Y.encodeStateAsUpdate(liveDoc);
       const fullB64 = uint8ArrayToBase64(fullUpdate);
@@ -298,5 +335,6 @@ export function useYjsDoc({
     emitCursor,
     saveSnapshot,
     socket: activeSocket,
+    decryptionError,
   };
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import * as Y from 'yjs';
 import { X, Check } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 interface DiffViewerModalProps {
   fileName: string;
@@ -44,19 +45,40 @@ export function extractTextFromYjsSnapshot(snapshotBase64: string | null): strin
   }
 }
 
+function getMonacoLanguage(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'c': return 'c';
+    case 'cpp': case 'cc': case 'cxx': case 'h': case 'hpp': return 'cpp';
+    case 'rs': return 'rust';
+    case 'go': return 'go';
+    case 'py': return 'python';
+    case 'js': case 'jsx': return 'javascript';
+    case 'ts': case 'tsx': return 'typescript';
+    case 'html': case 'htm': return 'html';
+    case 'css': return 'css';
+    case 'json': return 'json';
+    case 'md': return 'markdown';
+    case 'sql': return 'sql';
+    case 'sh': case 'bash': return 'shell';
+    default: return 'plaintext';
+  }
+}
+
 export function DiffViewerModal({
   fileName,
   originalSnapshotBase64,
   modifiedSnapshotBase64,
   title = "Code Review",
-  subtitle = "Current Code (Left) → Target Version (Right)",
-  leftLabel = "Current Working Code (Left)",
-  rightLabel = "Target Version / Past Commit (Right)",
+  subtitle = "Historical Commit (Left) → Current Working Editor (Right)",
+  leftLabel = "Historical Base (Left)",
+  rightLabel = "Current Working State (Right)",
   onClose,
   onConfirm,
   confirmLoading,
-  confirmLabel = "Confirm & Apply Merge"
+  confirmLabel = "Confirm & Apply"
 }: DiffViewerModalProps) {
+  const { theme } = useTheme();
   const [originalCode, setOriginalCode] = useState('');
   const [modifiedCode, setModifiedCode] = useState('');
 
@@ -64,6 +86,9 @@ export function DiffViewerModal({
     setOriginalCode(extractTextFromYjsSnapshot(originalSnapshotBase64));
     setModifiedCode(extractTextFromYjsSnapshot(modifiedSnapshotBase64));
   }, [originalSnapshotBase64, modifiedSnapshotBase64]);
+
+  const monacoLanguage = getMonacoLanguage(fileName);
+  const monacoTheme = theme === 'light' ? 'light' : 'vs-dark';
 
   return (
     <div style={{
@@ -79,15 +104,16 @@ export function DiffViewerModal({
         {/* Header */}
         <div style={{
           padding: '16px 24px', borderBottom: '1px solid var(--border)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: 'var(--bg-1)'
         }}>
           <div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 4 }}>
               {title}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span>{fileName}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--aurora-mint)', background: 'rgba(1, 239, 172, 0.1)', border: '1px solid rgba(1, 239, 172, 0.3)', padding: '2px 8px', borderRadius: 4 }}>
+              <span style={{ color: 'var(--text-primary)' }}>{fileName}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-secondary)', background: 'var(--sapphire-dim)', border: '1px solid var(--sapphire-border)', padding: '2px 8px', borderRadius: 4 }}>
                 {subtitle}
               </span>
             </div>
@@ -98,13 +124,13 @@ export function DiffViewerModal({
         {/* Column Headers for Crystal-Clear Diff Understanding */}
         <div style={{
           display: 'grid', gridTemplateColumns: '1fr 1fr',
-          background: 'var(--bg-0)', borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-2)', borderBottom: '1px solid var(--border)',
           fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em'
         }}>
-          <div style={{ padding: '8px 16px', color: '#f87171', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>●</span> {leftLabel}
+          <div style={{ padding: '8px 16px', color: 'var(--text-secondary)', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#f59e0b' }}>●</span> {leftLabel}
           </div>
-          <div style={{ padding: '8px 16px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ padding: '8px 16px', color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>●</span> {rightLabel}
           </div>
         </div>
@@ -114,15 +140,17 @@ export function DiffViewerModal({
           <DiffEditor
             original={originalCode}
             modified={modifiedCode}
-            language={fileName.split('.').pop() === 'py' ? 'python' : fileName.split('.').pop() === 'ts' || fileName.split('.').pop() === 'tsx' ? 'typescript' : 'javascript'}
-            theme="vs-dark"
+            language={monacoLanguage}
+            theme={monacoTheme}
             options={{
               readOnly: true,
               renderSideBySide: true,
+              useInlineViewWhenSpaceIsLimited: false,
               minimap: { enabled: false },
               padding: { top: 12 },
               scrollBeyondLastLine: false,
-              fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+              fontSize: 13,
             }}
           />
         </div>

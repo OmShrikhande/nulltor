@@ -25,36 +25,13 @@ import { TimelinePanel } from '../components/ide/TimelinePanel';
 import { StatusBar } from '../components/ide/StatusBar';
 import { ActivityBar, type ActivityTab } from '../components/ide/ActivityBar';
 import { SearchPanel } from '../components/ide/SearchPanel';
+import { ExtensionsPanel } from '../components/ide/ExtensionsPanel';
 import { BotpressPanel } from '../components/ide/BotpressPanel';
 import { NulltorLogo } from '../components/shared/NulltorLogo';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from '../components/shared/Toast';
 import { InviteSubroomModal } from '../components/ide/InviteSubroomModal';
-import { Rocket, GitMerge, Video, Users, Save, Bot, Mic, Lock, GitBranch, ListChecks, RefreshCw, ArrowDownCircle, Play } from 'lucide-react';
-
-const SALT = 'nulltor-static-salt-v1';
-
-
-const FLOATING_WORDS = [
-  { text: 'Nulltor', left: '4%', delay: '-1s' },
-  { text: 'E2EE Encryption', left: '15%', delay: '-5s' },
-  { text: 'Real-Time Yjs', left: '26%', delay: '-2s' },
-  { text: 'Branch Subrooms', left: '38%', delay: '-7s' },
-  { text: 'Zero-Knowledge', left: '50%', delay: '-3s' },
-  { text: 'FastAPI Backend', left: '62%', delay: '-8s' },
-  { text: 'Socket.IO Sync', left: '74%', delay: '-4s' },
-  { text: 'Monaco Editor', left: '85%', delay: '-6s' },
-  { text: 'Quantum Mesh', left: '93%', delay: '-1.5s' },
-  { text: 'Collaborative IDE', left: '10%', delay: '-3.5s' },
-  { text: 'CRDT Deltas', left: '32%', delay: '-0.5s' },
-  { text: 'Audit Telemetry', left: '44%', delay: '-4.5s' },
-  { text: 'Nulltor Engine', left: '55%', delay: '-8.5s' },
-  { text: 'System Governance', left: '68%', delay: '-2.5s' },
-  { text: 'Multi-User Sync', left: '78%', delay: '-7.5s' },
-  { text: 'AES-256 GCM', left: '88%', delay: '-5.2s' },
-  { text: 'Passphrase Vault', left: '6%', delay: '-7.8s' },
-  { text: 'Nulltor IDE', left: '48%', delay: '-1.8s' },
-];
+import { Rocket, GitMerge, Video, Users, Save, Bot, Mic, MicOff, PhoneOff, Lock, GitBranch, ListChecks, RefreshCw, ArrowDownCircle, Play, Key, Eye, EyeOff, ShieldCheck, ArrowLeft, Sun, Moon } from 'lucide-react';
 
 function VideoPlayer({ stream, muted = false, autoPlay = true, controls = false, style }: { stream: MediaStream | null, muted?: boolean, autoPlay?: boolean, controls?: boolean, style?: React.CSSProperties }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -95,7 +72,10 @@ function PassphraseModal({
   onSubmit: (key: string, isPrivate: boolean) => void;
   projectId: string;
 }) {
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [key, setKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,8 +91,8 @@ function PassphraseModal({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('nulltor_token')}`,
         },
+        credentials: 'include',
         body: JSON.stringify({ passphrase: trimmed }),
       });
       if (res.status === 403) {
@@ -124,10 +104,6 @@ function PassphraseModal({
         setError(data.detail || 'Verification failed. Please try again.');
         return;
       }
-      const data = await res.json();
-      if (data.status === 'set') {
-        // This user just set the passphrase for the first time
-      }
       onSubmit(trimmed, isPrivate);
     } catch (err) {
       setError('Network error. Could not verify passphrase. Is the server running?');
@@ -137,67 +113,274 @@ function PassphraseModal({
   }
 
   return (
-    <div className="login-screen">
-      <div className="floating-words-bg">
-        {FLOATING_WORDS.map((item, idx) => (
-          <div
-            key={idx}
-            className="floating-word"
-            style={{ left: item.left, animationDelay: item.delay }}
-          >
-            {item.text}
-          </div>
-        ))}
+    <div className="login-screen" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', padding: '20px' }}>
+      {/* Top Right Theme Toggle */}
+      <div style={{ position: 'absolute', top: '24px', right: '28px', zIndex: 50 }}>
+        <button
+          onClick={toggleTheme}
+          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 14px',
+            borderRadius: '9999px',
+            background: 'var(--bg-1)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-secondary)',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent-secondary)';
+            e.currentTarget.style.color = 'var(--text-primary)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border)';
+            e.currentTarget.style.color = 'var(--text-secondary)';
+          }}
+        >
+          {theme === 'dark' ? (
+            <>
+              <Sun size={14} style={{ color: '#f59e0b' }} />
+              <span>Light</span>
+            </>
+          ) : (
+            <>
+              <Moon size={14} style={{ color: '#6366f1' }} />
+              <span>Dark</span>
+            </>
+          )}
+        </button>
       </div>
-      <div className="login-glow" />
-      <div className="login-card" style={{ zIndex: 10, maxWidth: 440 }}>
-        <div className="login-logo">
-          <NulltorLogo size="lg" />
-        </div>
-        <h1 className="login-title">Start Room & IDE Session</h1>
-        <p className="login-sub">
-          Enter the project room passphrase to initialize real-time zero-knowledge E2EE collaboration.
-        </p>
 
-        <form className="login-form" onSubmit={handleSubmit}>
-          <div className="form-field">
-            <label htmlFor="passphrase-input" style={{ color: '#0d9488', fontWeight: 700 }}>
+      <div
+        className="animate-fade-in-up"
+        style={{
+          width: '100%',
+          maxWidth: '440px',
+          background: 'var(--bg-1)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border: '1px solid var(--border)',
+          borderRadius: '16px',
+          padding: '36px 32px',
+          boxShadow: '0 24px 60px rgba(0, 0, 0, 0.25)',
+          position: 'relative',
+          zIndex: 10,
+        }}
+      >
+        {/* Back to Dashboard Button */}
+        <div style={{ marginBottom: '16px' }}>
+          <button
+            onClick={() => navigate('/dashboard')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: 'var(--text-secondary)',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+          >
+            <ArrowLeft size={13} />
+            <span>Back to Dashboard</span>
+          </button>
+        </div>
+
+        {/* Header Branding */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '24px' }}>
+          <div style={{ marginBottom: '10px' }}>
+            <NulltorLogo size="lg" showText={true} />
+          </div>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', margin: 0 }}>
+            Start Room & IDE Session
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginTop: '6px', margin: 0, lineHeight: 1.4 }}>
+            Enter your project room key to unlock zero-knowledge E2EE real-time collaboration.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Room Key Input */}
+          <div>
+            <label
+              htmlFor="passphrase-input"
+              style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}
+            >
               Project Room Key
             </label>
-            <input
-              id="passphrase-input"
-              type="password"
-              value={key}
-              onChange={(e) => { setKey(e.target.value); setError(null); }}
-              placeholder="Enter the room passphrase"
-              autoFocus
-              required
-              disabled={isVerifying}
-            />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Key
+                size={16}
+                style={{ position: 'absolute', left: '12px', color: 'var(--text-muted)', pointerEvents: 'none' }}
+              />
+              <input
+                id="passphrase-input"
+                type={showKey ? 'text' : 'password'}
+                value={key}
+                onChange={(e) => { setKey(e.target.value); setError(null); }}
+                placeholder="Enter room passphrase"
+                autoFocus
+                required
+                disabled={isVerifying}
+                style={{
+                  width: '100%',
+                  padding: '10px 38px 10px 38px',
+                  fontSize: '13.5px',
+                  background: 'var(--bg-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                  transition: 'border-color 0.2s, box-shadow 0.2s',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = 'var(--accent-secondary)';
+                  e.target.style.boxShadow = '0 0 0 3px var(--accent-glow)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = 'var(--border)';
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                tabIndex={-1}
+              >
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
+          {/* Error Message */}
           {error && (
-            <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: '8px', color: '#f87171', fontSize: '13px', fontWeight: 600 }}>
+            <div style={{
+              padding: '8px 12px',
+              borderRadius: '8px',
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#ef4444',
+              fontSize: '12px',
+              fontWeight: 500,
+            }}>
               {error}
             </div>
           )}
 
-          <div className="form-field" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Private Subroom Checkbox */}
+          <label
+            htmlFor="private-mode-check"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border)',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
             <input
               type="checkbox"
               id="private-mode-check"
               checked={isPrivate}
               onChange={(e) => setIsPrivate(e.target.checked)}
-              style={{ width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
+              style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: 'var(--accent-primary)', margin: 0 }}
             />
-            <label htmlFor="private-mode-check" style={{ fontSize: '13px', color: 'var(--text-secondary)', cursor: 'pointer', margin: 0 }}>
-              Launch in Private Subroom (Isolate edits)
-            </label>
-          </div>
-          <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '16px' }} disabled={isVerifying}>
-            {isVerifying ? 'Verifying…' : <><Rocket size={14} /> Launch Project Session & IDE</>}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Launch in Private Subroom
+              </span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Isolate your edits without syncing to the main room
+              </span>
+            </div>
+          </label>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isVerifying}
+            style={{
+              marginTop: '6px',
+              padding: '11px 18px',
+              background: 'var(--accent-primary)',
+              color: '#ffffff',
+              fontSize: '13.5px',
+              fontWeight: 700,
+              borderRadius: '10px',
+              border: 'none',
+              cursor: isVerifying ? 'wait' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 14px var(--accent-glow)',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (!isVerifying) e.currentTarget.style.background = 'var(--accent-secondary)';
+            }}
+            onMouseLeave={(e) => {
+              if (!isVerifying) e.currentTarget.style.background = 'var(--accent-primary)';
+            }}
+          >
+            {isVerifying ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <RefreshCw size={14} className="spin" color="#ffffff" />
+                Unlocking Vault...
+              </span>
+            ) : (
+              <>
+                <Rocket size={15} />
+                <span>Launch Project Session & IDE</span>
+              </>
+            )}
           </button>
         </form>
+
+        {/* Security / E2EE Footer Tag */}
+        <div style={{
+          marginTop: '24px',
+          paddingTop: '14px',
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          fontWeight: 500,
+        }}>
+          <ShieldCheck size={14} style={{ color: '#10b981' }} />
+          <span>Zero-Knowledge AES-256 · Client-Side Decrypted</span>
+        </div>
       </div>
     </div>
   );
@@ -259,7 +442,7 @@ export function IDEPage() {
 
   if (creatingPrivate) {
     return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-0)' }}>
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'transparent' }}>
         <NulltorLogo size="lg" />
         <p style={{ color: 'var(--text-secondary)', marginTop: '16px' }}>Launching isolated private subroom IDE session…</p>
       </div>
@@ -306,17 +489,48 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   } | null>(null);
   const [pendingMergeCount, setPendingMergeCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+  const [drawerWidth, setDrawerWidth] = useState(() => {
+    const saved = localStorage.getItem('nulltor_drawer_width');
+    return saved ? Math.max(300, Math.min(window.innerWidth * 0.75, parseInt(saved, 10))) : 420;
+  });
+
+  const isDrawerDraggingRef = useRef(false);
+
+  const startDrawerResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDrawerDraggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = drawerWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDrawerDraggingRef.current) return;
+      const deltaX = startX - moveEvent.clientX;
+      const newWidth = Math.max(300, Math.min(window.innerWidth * 0.75, startWidth + deltaX));
+      setDrawerWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDrawerDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      localStorage.setItem('nulltor_drawer_width', String(drawerWidth));
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [drawerWidth]);
+
   const [sessionPrivateBranch, setSessionPrivateBranch] = useState(sessionStorage.getItem(`privatebranch-${projectId}`));
 
   const isReadOnly = Boolean(sessionPrivateBranch) && currentBranch?.id !== sessionPrivateBranch;
   const isSharedModeActive = !sessionPrivateBranch && currentBranch?.type === 'main';
+  const canReview = user?.role === 'superadmin' || user?.role === 'admin' || currentProject?.owner_id === user?.id;
 
   const isOnNonMainBranch = currentBranch?.type !== 'main';
-  const canReview = true; // GitHub model: all project members can view and review merge requests
+  const activeSalt = currentProject?.room_salt || `nulltor-salt-${projectId}`;
+  const { encrypt, decrypt } = useCrypto(passphrase, activeSalt);
 
-  const { encrypt, decrypt } = useCrypto(passphrase, SALT);
-
-  const { doc, docRef, text, isConnected, peers, cursors, emitCursor, saveSnapshot, socket } = useYjsDoc({
+  const { doc, docRef, text, isConnected, peers, cursors, emitCursor, saveSnapshot, socket, decryptionError } = useYjsDoc({
     fileId: openFile?.id ?? '__none__',
     branchId: currentBranch?.id ?? 'main',
     encrypt,
@@ -325,6 +539,12 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     userId: user?.id,
     color: '#01EFAC',
   });
+
+  useEffect(() => {
+    if (decryptionError) {
+      toast('Decryption failed for this file. Please verify your room passphrase.', 'error');
+    }
+  }, [decryptionError]);
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -374,11 +594,21 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         toast(`${data.inviterName} invited you to join subroom "${data.branchName}"!`, 'info');
       }
     };
+    const handleBranchUpdated = ({ branchId }: { branchId: string }) => {
+      if (branchId === currentBranch?.id) {
+        refreshTree();
+        if (openFile) {
+          socket.emit('force-reload-file', { fileId: openFile.id, branchId: currentBranch.id });
+        }
+      }
+    };
     socket.on('subroom-invite-received', handleInvite);
+    socket.on('branch-updated', handleBranchUpdated);
     return () => {
       socket.off('subroom-invite-received', handleInvite);
+      socket.off('branch-updated', handleBranchUpdated);
     };
-  }, [socket, projectId]);
+  }, [socket, projectId, currentBranch?.id, openFile?.id]);
 
   const { localStream, remoteStreams, isMuted, isVideoActive, startCall, toggleMute, leaveCall } = useWebRTC(
     socket,
@@ -397,7 +627,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'create_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content: initialContent })
           });
           const data = await res.json();
@@ -415,7 +646,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'read_file', project_id: projectId, branch_id: currentBranch?.id, file_path: target })
           });
           const data = await res.json();
@@ -430,7 +662,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'write_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content })
           });
           const data = await res.json();
@@ -450,7 +683,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'modify_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename, content })
           });
           const data = await res.json();
@@ -470,7 +704,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'delete_file', project_id: projectId, branch_id: currentBranch?.id, file_path: filename })
           });
           const data = await res.json();
@@ -486,7 +721,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
       listFiles: async () => {
         const res = await fetch('/api/tools/execute', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ action: 'list_files', project_id: projectId, branch_id: currentBranch?.id })
         });
         return await res.json();
@@ -538,7 +774,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     }
   }
 
-  async function handlePullSyncComplete(newSnapshotBase64?: string | null) {
+  async function handlePullSyncComplete(newSnapshotBase64?: string | null, targetFileId?: string | null) {
     const liveDoc = docRef.current;
     if (newSnapshotBase64 && liveDoc) {
       try {
@@ -549,13 +785,28 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           liveDoc.transact(() => {
             ytext.delete(0, ytext.length);
             ytext.insert(0, newCode);
-          });
+          }, 'sync');
           setEditorValue(newCode);
         }
       } catch (e) {
         console.error('Failed to apply synced snapshot', e);
       }
     }
+
+    if (socket && currentBranch) {
+      socket.emit('sync-branch-room', {
+        branchId: currentBranch.id,
+        activeFileId: targetFileId || openFile?.id,
+        activeSnapshot: newSnapshotBase64,
+      });
+      if (openFile) {
+        socket.emit('force-reload-file', {
+          fileId: targetFileId || openFile.id,
+          branchId: currentBranch.id,
+        });
+      }
+    }
+
     await refreshTree();
     await handleBranchRefresh();
   }
@@ -587,6 +838,22 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     }
   }
 
+  function flattenFiles(nodes: DirectoryNode[]): DirectoryNode[] {
+    const files: DirectoryNode[] = [];
+    const traverse = (items: DirectoryNode[]) => {
+      for (const item of items) {
+        if (item.type === 'file') {
+          files.push(item);
+        }
+        if (item.children && item.children.length > 0) {
+          traverse(item.children);
+        }
+      }
+    };
+    traverse(nodes);
+    return files;
+  }
+
   async function handleCommitWorkspaceRequest() {
     const liveDoc = docRef.current;
     if (!currentBranch || !projectId) return;
@@ -594,20 +861,29 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     if (!msg) return;
 
     try {
-      let count = 0;
+      const allFiles = flattenFiles(tree);
+      const manifest: Record<string, string> = {};
+      for (const f of allFiles) {
+        manifest[f.name] = f.id;
+      }
+
+      let activeSnapshot: string | undefined = undefined;
       if (openFile && liveDoc) {
+        saveSnapshot();
         const update = Y.encodeStateAsUpdate(liveDoc);
         const b64 = uint8ArrayToBase64(update);
-        const encryptedSnapshot = encrypt(b64);
-
-        await commitsApi.createCommit(projectId, {
-          branch_id: currentBranch.id,
-          file_id: openFile.id,
-          message: `📦 Workspace: ${msg}`,
-          snapshot: encryptedSnapshot
-        });
-        count++;
+        activeSnapshot = encrypt(b64);
       }
+
+      await commitsApi.createCommit(projectId, {
+        branch_id: currentBranch.id,
+        file_id: '__all__',
+        message: `📦 Workspace: ${msg}`,
+        snapshot: activeSnapshot,
+        tree_manifest: manifest,
+      });
+
+      const count = allFiles.length > 0 ? allFiles.length : (activeSnapshot ? 1 : 0);
       toast(`Committed workspace snapshot (${count} file${count === 1 ? '' : 's'})`, "success");
       if (activeTab !== 'git') {
         setActiveTab('git');
@@ -761,7 +1037,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
       sessionStorage.removeItem(`privatebranch-${projectId}`);
       setSessionPrivateBranch(null);
     }
-    useEditorStore.getState().setFile(null); // Clear open file so it doesn't query a mismatched ID
+    useEditorStore.getState().clearAllTabs(); // Isolate room tabs so previous room files do not leak
+    setEditorValue('');
     toast(`Switched to ${branch.type.toUpperCase()} room: ${branch.name}`, 'info');
   }
 
@@ -777,7 +1054,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     const mainB = branches.find(b => b.type === 'main');
     if (mainB) {
       setBranch(mainB);
-      useEditorStore.getState().setFile(null); // Clear mismatched file ID
+      useEditorStore.getState().clearAllTabs(); // Clear previous room tabs
+      setEditorValue('');
       toast('Switched to shared main room with write access.', 'success');
     }
   }
@@ -787,6 +1065,18 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     if (!projectId || !canReview) return;
     mergesApi.list(projectId, 'pending').then((data) => setPendingMergeCount(data.length)).catch(() => { });
   }, [projectId, canReview]);
+
+  const getCurrentCode = useCallback(() => {
+    const liveDoc = docRef.current;
+    if (liveDoc) {
+      const ytext = liveDoc.getText('content').length > 0
+        ? liveDoc.getText('content')
+        : liveDoc.getText('monaco');
+      if (ytext && ytext.length > 0) return ytext.toString();
+    }
+    if (text && text.length > 0) return text.toString();
+    return editorValue;
+  }, [text, editorValue]);
 
   if (loading) {
     return (
@@ -802,8 +1092,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
       {/* Top Global Project Session & Room Header */}
       <header className="nexus-topbar" style={{
         height: '46px',
-        background: '#111215',
-        borderBottom: '1px solid #1f2128',
+        background: 'var(--bg-1)',
+        borderBottom: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -816,7 +1106,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             <NulltorLogo size="sm" showText={true} />
           </div>
 
-          <div style={{ width: '1px', height: '18px', background: '#252830' }}></div>
+          <div style={{ width: '1px', height: '18px', background: 'var(--border)' }}></div>
 
           {/* Branch Pill */}
           <BranchSelector
@@ -860,28 +1150,28 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             title={isRunning ? 'Executing code in sandbox...' : 'Execute Code (Run)'}
             style={{
               padding: '6px 18px',
-              color: '#000000',
-              background: '#ffffff',
+              color: '#ffffff',
+              background: 'var(--accent)',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               fontWeight: 700,
               fontSize: '12.5px',
               border: 'none',
-              borderRadius: '20px',
+              borderRadius: '8px',
               cursor: isRunning ? 'wait' : 'pointer',
-              boxShadow: '0 1px 4px rgba(255, 255, 255, 0.2)',
+              boxShadow: '0 2px 8px var(--accent-glow)',
               transition: 'all 0.15s ease',
             }}
           >
             {isRunning ? (
               <>
-                <RefreshCw size={13} className="spin" color="#000000" />
+                <RefreshCw size={13} className="spin" color="#ffffff" />
                 <span>Running...</span>
               </>
             ) : (
               <>
-                <Play size={13} fill="#000000" color="#000000" />
+                <Play size={13} fill="#ffffff" color="#ffffff" />
                 <span>Run</span>
               </>
             )}
@@ -894,9 +1184,9 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             title={openFile ? `Save ${openFile.name} (Ctrl+S)` : 'Save File (Ctrl+S)'}
             style={{
               padding: '6px 14px',
-              background: '#18191e',
-              border: '1px solid #2a2d36',
-              color: openFile ? '#38bdf8' : '#64748b',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border)',
+              color: openFile ? 'var(--accent-secondary)' : 'var(--text-muted)',
               fontWeight: 600,
               fontSize: '12px',
               display: 'inline-flex',
@@ -909,26 +1199,26 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
           >
             {isSaving ? (
               <>
-                <RefreshCw size={13} className="spin" color="#38bdf8" />
+                <RefreshCw size={13} className="spin" />
                 <span>Saving...</span>
               </>
             ) : (
               <>
-                <Save size={13} color={openFile ? '#38bdf8' : '#64748b'} />
+                <Save size={13} />
                 <span>Save</span>
               </>
             )}
           </button>
 
-          {/* Secondary Ghost Pull / Sync Button */}
+          {/* Secondary Pull / Sync Button */}
           <button
             onClick={() => setShowPullSyncModal(true)}
             title={`Pull updates from another branch into ${currentBranch?.name ?? 'current branch'}`}
             style={{
               padding: '6px 14px',
-              background: '#18191e',
-              border: '1px solid #2a2d36',
-              color: '#e2e8f0',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-primary)',
               fontWeight: 600,
               fontSize: '12px',
               display: 'inline-flex',
@@ -939,19 +1229,19 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               transition: 'all 0.15s ease',
             }}
           >
-            <ArrowDownCircle size={14} color="#94a3b8" />
+            <ArrowDownCircle size={14} color="var(--text-secondary)" />
             <span>Pull</span>
           </button>
 
-          {/* Secondary Ghost Merge / PR Button */}
+          {/* Secondary Merge / PR Button */}
           <button
             onClick={() => setShowMergeModal(true)}
             title="Submit Merge / Pull Request"
             style={{
               padding: '6px 14px',
-              background: '#18191e',
-              border: '1px solid #2a2d36',
-              color: '#e2e8f0',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-primary)',
               fontWeight: 600,
               fontSize: '12px',
               display: 'inline-flex',
@@ -962,11 +1252,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               transition: 'all 0.15s ease',
             }}
           >
-            <GitMerge size={14} color="#94a3b8" />
+            <GitMerge size={14} color="var(--text-secondary)" />
             <span>Merge / PR</span>
           </button>
 
-          <div style={{ width: '1px', height: '18px', background: '#252830', margin: '0 2px' }}></div>
+          <div style={{ width: '1px', height: '18px', background: 'var(--border)', margin: '0 2px' }}></div>
 
           {/* Review PR Button with Tooltip */}
           {canReview && (
@@ -982,6 +1272,41 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
                   {pendingMergeCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Live Video / Voice Call Button */}
+          {isVideoActive ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '2px 6px' }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={toggleMute}
+                title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                style={{ padding: '3px', color: isMuted ? '#ef4444' : '#10b981', background: 'none' }}
+              >
+                {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={leaveCall}
+                title="Leave Voice/Video Call"
+                style={{ padding: '3px', color: '#ef4444', background: 'none' }}
+              >
+                <PhoneOff size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={startCall}
+              title="Start Live Team Voice & Video Call"
+              style={{
+                padding: '6px 8px',
+                borderRadius: '6px',
+                color: '#94a3b8',
+              }}
+            >
+              <Video size={16} />
             </button>
           )}
 
@@ -1042,7 +1367,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         <ActivityBar
           activeTab={activeTab}
           onChangeTab={(tab) => {
-            setActiveTab(tab);
+            if (tab === 'agent') {
+              setShowAgentPanel(true);
+            } else {
+              setActiveTab(tab);
+            }
           }}
           onBotClick={toggleBotpressChat}
           onProfileClick={() => navigate('/profile')}
@@ -1074,52 +1403,61 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               }}
             />
           )}
-          {activeTab === 'git' && openFile && currentBranch && (
-            <TimelinePanel
-              projectId={projectId}
-              branchId={currentBranch.id}
-              fileId={openFile.id}
-              fileName={openFile.name}
-              passphrase={passphrase}
-              getCurrentSnapshot={() => {
-                const liveDoc = docRef.current;
-                if (!liveDoc) return null;
-                try {
-                  const update = Y.encodeStateAsUpdate(liveDoc);
-                  const b64 = uint8ArrayToBase64(update);
-                  return encrypt(b64);
-                } catch { return null; }
-              }}
-              onRestore={(snapshotBase64) => {
-                const liveDoc = docRef.current;
-                if (!liveDoc) return;
-                try {
-                  const uint8Array = base64ToUint8Array(snapshotBase64);
-                  const tempDoc = new Y.Doc();
-                  Y.applyUpdate(tempDoc, uint8Array);
+          {activeTab === 'git' && (
+            openFile && currentBranch ? (
+              <TimelinePanel
+                projectId={projectId}
+                branchId={currentBranch.id}
+                fileId={openFile.id}
+                fileName={openFile.name}
+                passphrase={passphrase}
+                getCurrentSnapshot={() => {
+                  const liveDoc = docRef.current;
+                  if (!liveDoc) return null;
+                  try {
+                    const update = Y.encodeStateAsUpdate(liveDoc);
+                    const b64 = uint8ArrayToBase64(update);
+                    return encrypt(b64);
+                  } catch { return null; }
+                }}
+                onRestore={(snapshotBase64) => {
+                  const liveDoc = docRef.current;
+                  if (!liveDoc) return;
+                  try {
+                    const uint8Array = base64ToUint8Array(snapshotBase64);
+                    const tempDoc = new Y.Doc();
+                    Y.applyUpdate(tempDoc, uint8Array);
 
-                  let restoredText = '';
-                  if (tempDoc.getText('content').length > 0) restoredText = tempDoc.getText('content').toString();
-                  else if (tempDoc.getText('monaco').length > 0) restoredText = tempDoc.getText('monaco').toString();
+                    let restoredText = '';
+                    if (tempDoc.getText('content').length > 0) restoredText = tempDoc.getText('content').toString();
+                    else if (tempDoc.getText('monaco').length > 0) restoredText = tempDoc.getText('monaco').toString();
 
-                  if (restoredText) {
-                    const liveText = liveDoc.getText('content');
-                    liveText.delete(0, liveText.length);
-                    liveText.insert(0, restoredText);
-                    setEditorValue(restoredText);
+                    if (restoredText) {
+                      const liveText = liveDoc.getText('content');
+                      liveText.delete(0, liveText.length);
+                      liveText.insert(0, restoredText);
+                      setEditorValue(restoredText);
+                    }
+                  } catch (e) {
+                    console.error("Failed to apply snapshot to Yjs doc", e);
+                    alert("Failed to restore snapshot.");
                   }
-                } catch (e) {
-                  console.error("Failed to apply snapshot to Yjs doc", e);
-                  alert("Failed to restore snapshot.");
-                }
-              }}
-              onClose={() => setActiveTab('explorer')}
-            />
+                }}
+                onClose={() => setActiveTab('explorer')}
+              />
+            ) : (
+              <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
+                <GitBranch size={32} style={{ margin: '0 auto 12px', opacity: 0.6, color: 'var(--accent-primary)' }} />
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px', fontSize: '13px' }}>Source Control & History</div>
+                <div style={{ lineHeight: 1.5 }}>Select any file from the workspace explorer to inspect its commit versions, tri-engine delta chain, and rollback snapshots.</div>
+              </div>
+            )
           )}
-          {activeTab !== 'explorer' && activeTab !== 'search' && activeTab !== 'git' && (
-            <div style={{ padding: '16px', color: 'var(--text-secondary)' }}>
-              {activeTab} panel coming soon.
-            </div>
+          {activeTab === 'extensions' && (
+            <ExtensionsPanel
+              onClose={() => setActiveTab('explorer')}
+              onOpenSettings={() => navigate('/settings')}
+            />
           )}
         </div>
 
@@ -1151,7 +1489,25 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
 
 
         {showTeamDrawer ? (
-          <div className="ide-side-drawer" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div
+            className="ide-side-drawer"
+            style={{
+              width: `${drawerWidth}px`,
+              minWidth: '300px',
+              maxWidth: '75vw',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              position: 'relative',
+              flexShrink: 0,
+            }}
+          >
+            <div
+              onMouseDown={startDrawerResize}
+              className="ide-drawer-resize-handle"
+              title="Drag to resize drawer"
+            />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
               <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Room & Subrooms Overview
@@ -1170,6 +1526,8 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {branches.map((b) => {
                   const isCurrent = b.id === currentBranch?.id;
+                  const isMain = b.type === 'main';
+                  const isSubroom = b.type === 'subroom';
                   return (
                     <div
                       key={b.id}
@@ -1178,20 +1536,21 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '8px 10px',
-                        borderRadius: 'var(--radius-xs)',
-                        background: isCurrent ? 'rgba(1, 239, 172, 0.12)' : 'var(--bg-2)',
-                        border: isCurrent ? '1px solid var(--aurora-mint)' : '1px solid var(--border)',
+                        padding: '8px 12px',
+                        background: isCurrent ? (isMain ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)') : 'var(--bg-2)',
+                        border: `1px solid ${isCurrent ? (isMain ? '#10b981' : '#38bdf8') : 'var(--border)'}`,
+                        borderRadius: '6px',
                         cursor: 'pointer',
+                        fontSize: '12px',
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>{b.type === 'main' ? <GitBranch size={14} /> : b.type === 'subroom' ? <GitMerge size={14} /> : <Lock size={14} />}</span>
-                        <span style={{ fontSize: '12.5px', fontWeight: isCurrent ? 700 : 500, color: isCurrent ? 'var(--aurora-mint)' : 'var(--text-primary)' }}>
-                          {b.name}
-                        </span>
+                        <GitBranch size={13} style={{ color: isMain ? '#10b981' : isSubroom ? '#38bdf8' : '#a855f7' }} />
+                        <span style={{ fontWeight: isCurrent ? 700 : 500 }}>{b.name}</span>
                       </div>
-                      {isCurrent && <span style={{ fontSize: '10px', color: 'var(--aurora-mint)', fontWeight: 700 }}>ACTIVE</span>}
+                      <span className={`badge ${isMain ? 'badge-main' : isSubroom ? 'badge-subroom' : 'badge-private'}`} style={{ fontSize: '10px' }}>
+                        {b.type}
+                      </span>
                     </div>
                   );
                 })}
@@ -1309,11 +1668,37 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             </button>
           </div>
         ) : showAgentPanel ? (
-          <div className="ide-side-drawer" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          <div
+            className="ide-side-drawer"
+            style={{
+              width: `${drawerWidth}px`,
+              minWidth: '300px',
+              maxWidth: '75vw',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              overflow: 'hidden',
+              position: 'relative',
+              flexShrink: 0,
+            }}
+          >
+            <div
+              onMouseDown={startDrawerResize}
+              className="ide-drawer-resize-handle"
+              title="Drag to resize Agent panel"
+            />
             <AgentPanel
               projectId={projectId}
               branchId={currentBranch?.id}
-              currentCode={editorValue}
+              currentCode={getCurrentCode()}
+              getCurrentCode={getCurrentCode}
+              onSaveSnapshot={() => {
+                try {
+                  saveSnapshot();
+                } catch (e) {
+                  console.error('Failed to save snapshot:', e);
+                }
+              }}
               onApplyCode={handleApplyAgentCode}
               onRefreshTree={refreshTree}
               onClose={() => setShowAgentPanel(false)}
@@ -1326,6 +1711,11 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
         isConnected={isConnected}
         peerCount={peers.length}
         branchName={currentBranch?.name}
+        onReconnect={() => {
+          if (socket) {
+            socket.connect();
+          }
+        }}
       />
 
       {/* Real-Time Incoming Subroom Invitation Permission Dialog */}
@@ -1502,6 +1892,58 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
             useEditorStore.getState().setFile(null);
           }}
         />
+      )}
+
+      {/* Floating WebRTC Video Dock */}
+      {isVideoActive && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '36px',
+            right: '20px',
+            zIndex: 9000,
+            background: 'var(--bg-1)',
+            border: '1px solid var(--border)',
+            borderRadius: '12px',
+            padding: '10px',
+            boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            maxWidth: '340px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+              Live Call ({1 + remoteStreams.length} in call)
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button onClick={toggleMute} style={{ background: 'none', border: 'none', color: isMuted ? '#ef4444' : 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}>
+                {isMuted ? <MicOff size={13} /> : <Mic size={13} />}
+              </button>
+              <button onClick={leaveCall} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px' }}>
+                <PhoneOff size={13} />
+              </button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            <div style={{ position: 'relative', width: '145px', height: '90px', borderRadius: '6px', overflow: 'hidden', background: '#000' }}>
+              <VideoPlayer stream={localStream} muted autoPlay style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <span style={{ position: 'absolute', bottom: '4px', left: '6px', fontSize: '9px', background: 'rgba(0,0,0,0.6)', padding: '1px 4px', borderRadius: '3px', color: '#fff' }}>
+                You {isMuted ? '(Muted)' : ''}
+              </span>
+            </div>
+            {remoteStreams.map((rem) => (
+              <div key={rem.peerId} style={{ position: 'relative', width: '145px', height: '90px', borderRadius: '6px', overflow: 'hidden', background: '#000' }}>
+                <VideoPlayer stream={rem.stream} autoPlay style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <span style={{ position: 'absolute', bottom: '4px', left: '6px', fontSize: '9px', background: 'rgba(0,0,0,0.6)', padding: '1px 4px', borderRadius: '3px', color: '#fff' }}>
+                  Peer
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

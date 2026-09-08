@@ -3,7 +3,7 @@ import { branchesApi, type BranchRead, type BranchCompareResponse } from '../../
 import { Modal } from '../shared/Modal';
 import { toast } from '../shared/Toast';
 import { DiffViewerModal } from './DiffViewerModal';
-import { ArrowDownCircle, GitBranch, FileCode2, Check, RefreshCw } from 'lucide-react';
+import { ArrowDownCircle, GitBranch, FileCode2, Layers, RefreshCw, Folder } from 'lucide-react';
 
 interface PullSyncModalProps {
   projectId: string;
@@ -14,7 +14,7 @@ interface PullSyncModalProps {
   getCurrentSnapshot: () => string | null;
   decryptSnapshot: (base64: string | null) => string | null;
   onClose: () => void;
-  onSyncComplete: (newSnapshotBase64?: string | null) => void;
+  onSyncComplete: (newSnapshotBase64?: string | null, targetFileId?: string | null) => void;
 }
 
 export function PullSyncModal({
@@ -31,6 +31,7 @@ export function PullSyncModal({
   const otherBranches = branches.filter((b) => b.id !== currentBranch.id);
   const defaultSource = otherBranches.find((b) => b.type === 'main') ?? otherBranches[0];
   const [sourceBranchId, setSourceBranchId] = useState(defaultSource?.id ?? '');
+  const [pullScope, setPullScope] = useState<'room' | 'file'>('room');
   const [loading, setLoading] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [compareData, setCompareData] = useState<BranchCompareResponse | null>(null);
@@ -39,7 +40,7 @@ export function PullSyncModal({
 
   const sourceBranch = branches.find((b) => b.id === sourceBranchId);
 
-  // Load comparison data on source branch change
+  // Load comparison data on source branch change (for file preview if available)
   useEffect(() => {
     if (!sourceBranchId || !currentFileId) return;
     let isMounted = true;
@@ -71,8 +72,8 @@ export function PullSyncModal({
       setError('Please select a source branch to pull changes from.');
       return;
     }
-    if (!currentFileId) {
-      setError('Please open a file to sync.');
+    if (pullScope === 'file' && !currentFileId) {
+      setError('Please open a file to sync or select "Entire Room".');
       return;
     }
 
@@ -81,12 +82,19 @@ export function PullSyncModal({
     try {
       const res = await branchesApi.sync(projectId, currentBranch.id, {
         source_branch_id: sourceBranchId,
-        file_id: currentFileId,
-        sync_message: `⬇ Pulled latest updates from '${sourceBranch?.name ?? 'source'}'`,
+        file_id: pullScope === 'room' ? '__all__' : currentFileId,
+        active_file_id: currentFileId,
+        sync_message: pullScope === 'room'
+          ? `⬇ Pulled entire room updates from '${sourceBranch?.name ?? 'source'}'`
+          : `⬇ Pulled updates for ${currentFileName ?? 'file'} from '${sourceBranch?.name ?? 'source'}'`,
       });
 
-      toast(`Successfully pulled changes from ${sourceBranch?.name ?? 'branch'}!`, 'success');
-      onSyncComplete(res.snapshot);
+      const successMsg = pullScope === 'room'
+        ? `Successfully pulled entire room (${res.synced_files_count ?? 'all'} files) from ${sourceBranch?.name ?? 'branch'}!`
+        : `Successfully pulled changes for ${currentFileName ?? 'file'}!`;
+
+      toast(successMsg, 'success');
+      onSyncComplete(res.snapshot, res.target_file_id || res.active_file_id || currentFileId);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to pull changes from branch');
@@ -128,7 +136,7 @@ export function PullSyncModal({
             <button
               className="btn btn-primary"
               onClick={handlePullSync}
-              disabled={loading || !sourceBranchId || !currentFileId}
+              disabled={loading || !sourceBranchId || (pullScope === 'file' && !currentFileId)}
               style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
             >
               {loading ? (
@@ -139,7 +147,7 @@ export function PullSyncModal({
               ) : (
                 <>
                   <ArrowDownCircle size={14} />
-                  <span>Pull & Apply to {currentBranch.name}</span>
+                  <span>{pullScope === 'room' ? `Pull Entire Room into ${currentBranch.name}` : `Pull File into ${currentBranch.name}`}</span>
                 </>
               )}
             </button>
@@ -153,38 +161,98 @@ export function PullSyncModal({
             alignItems: 'center',
             gap: 12,
             padding: '14px 16px',
-            background: 'rgba(1, 239, 172, 0.05)',
-            border: '1px solid rgba(1, 239, 172, 0.2)',
+            background: 'rgba(37, 99, 235, 0.08)',
+            border: '1px solid rgba(37, 99, 235, 0.25)',
             borderRadius: 'var(--radius)',
-            marginBottom: 20,
+            marginBottom: 16,
           }}
         >
           <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
               Pull From (Source)
             </div>
-            <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--aurora-mint)' }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent-secondary)' }}>
               {sourceBranch?.name ?? 'Select branch'}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{sourceBranch?.type}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 2 }}>{sourceBranch?.type}</div>
           </div>
 
-          <ArrowDownCircle size={22} style={{ color: 'var(--aurora-mint)', flexShrink: 0 }} />
+          <ArrowDownCircle size={24} style={{ color: 'var(--accent-secondary)', flexShrink: 0 }} />
 
           <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-              Pull Into (Current)
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+              Pull Into (Current Room)
             </div>
-            <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)' }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
               {currentBranch.name}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{currentBranch.type}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 2 }}>{currentBranch.type}</div>
+          </div>
+        </div>
+
+        {/* Pull Scope Selector: Entire Room vs Single File */}
+        <div className="form-field">
+          <label style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-primary)', marginBottom: 8, display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Sync Scope
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setPullScope('room')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: pullScope === 'room' ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-surface)',
+                border: pullScope === 'room' ? '1.5px solid var(--accent-secondary)' : '1px solid var(--border)',
+                color: pullScope === 'room' ? 'var(--accent-secondary)' : 'var(--text-primary)',
+                fontWeight: pullScope === 'room' ? 700 : 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <Layers size={16} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Entire Room</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>All workspace files & folders</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPullScope('file')}
+              disabled={!currentFileId}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: pullScope === 'file' ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-surface)',
+                border: pullScope === 'file' ? '1.5px solid var(--accent-secondary)' : '1px solid var(--border)',
+                color: pullScope === 'file' ? 'var(--accent-secondary)' : 'var(--text-primary)',
+                fontWeight: pullScope === 'file' ? 700 : 600,
+                cursor: currentFileId ? 'pointer' : 'not-allowed',
+                opacity: currentFileId ? 1 : 0.6,
+                textAlign: 'left',
+              }}
+            >
+              <FileCode2 size={16} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Active File Only</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  {currentFileName ? currentFileName : 'No file open'}
+                </div>
+              </div>
+            </button>
           </div>
         </div>
 
         {/* Source branch selection */}
-        <div className="form-field">
-          <label style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="form-field" style={{ marginTop: 14 }}>
+          <label style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <GitBranch size={14} /> Source Branch to Pull From
           </label>
           <select
@@ -192,7 +260,7 @@ export function PullSyncModal({
             value={sourceBranchId}
             onChange={(e) => setSourceBranchId(e.target.value)}
             disabled={loading}
-            style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)' }}
+            style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-popover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}
           >
             {otherBranches.map((b) => (
               <option key={b.id} value={b.id}>
@@ -202,29 +270,9 @@ export function PullSyncModal({
           </select>
         </div>
 
-        {/* Active file */}
-        <div className="form-field" style={{ marginTop: 12 }}>
-          <label style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <FileCode2 size={14} /> File to Sync
-          </label>
-          <div
-            style={{
-              padding: '8px 12px',
-              background: 'var(--bg-2)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              fontSize: 13,
-              fontFamily: 'monospace',
-              color: 'var(--text-primary)',
-            }}
-          >
-            {currentFileName ?? currentFileId ?? 'No file open'}
-          </div>
-        </div>
-
-        {/* Diff preview button */}
-        {compareData && (
-          <div style={{ marginTop: 16 }}>
+        {/* Diff preview button for single file */}
+        {pullScope === 'file' && compareData && (
+          <div style={{ marginTop: 14 }}>
             <button
               type="button"
               className="btn btn-sm btn-full"
@@ -248,11 +296,11 @@ export function PullSyncModal({
 
         {/* Recent commits on source branch */}
         {compareData && compareData.source_commits.length > 0 && (
-          <div style={{ marginTop: 16 }}>
+          <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
               Latest Commits on {sourceBranch?.name}:
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 110, overflowY: 'auto' }}>
               {compareData.source_commits.slice(0, 3).map((c) => (
                 <div key={c.id} style={{ padding: '6px 10px', background: 'var(--bg-2)', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)' }}>
                   <span style={{ fontWeight: 600 }}>{c.message}</span>

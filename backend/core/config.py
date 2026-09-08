@@ -27,12 +27,21 @@ class Settings(BaseSettings):
     SNAPSHOT_DIR: str = "storage/snapshots"
 
     # CORS
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3330,http://127.0.0.1:3330,http://nulltor.local:3330"
 
     # AI Agent (Groq)
     GROQ_API_KEY: str = ""
     AI_BASE_URL: str = "https://api.groq.com/openai/v1"
-    AI_MODEL: str = "openai/gpt-oss-120b"
+    AI_MODEL: str = "llama-3.3-70b-versatile"
+
+    # Docker Sandbox for Terminal
+    USE_DOCKER_SANDBOX: bool = False
+
+    # WebRTC ICE Servers (STUN & TURN)
+    STUN_SERVER_URL: str = "stun:stun.l.google.com:19302"
+    TURN_SERVER_URL: str | None = None
+    TURN_SERVER_USERNAME: str | None = None
+    TURN_SERVER_CREDENTIAL: str | None = None
 
     @property
     def allowed_origins_list(self) -> List[str]:

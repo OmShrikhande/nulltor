@@ -1,8 +1,33 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/shared/Sidebar';
-import { Settings, Type, AlignLeft, WrapText, Monitor, RotateCcw, Terminal, Clock } from 'lucide-react';
+import {
+  Settings,
+  Type,
+  AlignLeft,
+  WrapText,
+  Monitor,
+  RotateCcw,
+  Terminal,
+  Clock,
+  Bot,
+  KeyRound,
+  Globe,
+  Eye,
+  EyeOff,
+  Activity,
+  CheckCircle2,
+  AlertTriangle,
+  Sparkles,
+} from 'lucide-react';
 import { usersApi } from '../api/users';
+import { aiApi } from '../api/ai';
+import {
+  PROVIDER_PRESETS,
+  loadLLMConfig,
+  saveLLMConfig,
+  type LLMProvider,
+} from '../utils/llmProviders';
 
 const STORAGE_KEY = 'nulltor-editor-settings';
 const EXEC_STORAGE_KEY = 'nulltor-exec-settings';
@@ -63,7 +88,18 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<EditorSettings>(loadEditorSettings);
   const [execSettings, setExecSettings] = useState<ExecSettings>(loadExecSettings);
+  const [llmConfig, setLlmConfig] = useState(loadLLMConfig);
+  const [showKey, setShowKey] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    tested: boolean;
+    success?: boolean;
+    message?: string;
+    latency_ms?: number;
+  }>({ tested: false });
   const [saved, setSaved] = useState(false);
+
+  const { provider, apiKey, model, baseUrl } = llmConfig;
 
   // Load preferences from database on mount
   useEffect(() => {
@@ -79,14 +115,27 @@ export function SettingsPage() {
           setExecSettings(mergedExec);
           saveExec(mergedExec);
         }
+        if (pref.ai && pref.ai.provider) {
+          const updated = saveLLMConfig({
+            provider: pref.ai.provider,
+            model: pref.ai.model || llmConfig.model,
+            baseUrl: pref.ai.baseUrl || llmConfig.baseUrl,
+          });
+          setLlmConfig(updated);
+        }
       }
     }).catch(() => {});
   }, []);
 
-  function syncRemotePreferences(nextEditor: EditorSettings, nextExec: ExecSettings) {
+  function syncRemotePreferences(nextEditor: EditorSettings, nextExec: ExecSettings, nextLLM = llmConfig) {
     usersApi.updatePreferences({
       editor: nextEditor,
       exec: nextExec,
+      ai: {
+        provider: nextLLM.provider,
+        model: nextLLM.model,
+        baseUrl: nextLLM.baseUrl,
+      },
     }).catch(() => {});
   }
 
@@ -94,7 +143,7 @@ export function SettingsPage() {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
       save(next);
-      syncRemotePreferences(next, execSettings);
+      syncRemotePreferences(next, execSettings, llmConfig);
       return next;
     });
     setSaved(true);
@@ -105,11 +154,56 @@ export function SettingsPage() {
     setExecSettings((prev) => {
       const next = { ...prev, [key]: value };
       saveExec(next);
-      syncRemotePreferences(settings, next);
+      syncRemotePreferences(settings, next, llmConfig);
       return next;
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  }
+
+  function updateLLM(patch: Partial<typeof llmConfig>) {
+    const next = saveLLMConfig(patch);
+    setLlmConfig(next);
+    setConnectionStatus({ tested: false });
+    syncRemotePreferences(settings, execSettings, next);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  function handleProviderChange(newProvider: LLMProvider) {
+    const preset = PROVIDER_PRESETS[newProvider];
+    updateLLM({
+      provider: newProvider,
+      baseUrl: preset.defaultBaseUrl,
+      model: preset.defaultModel,
+    });
+  }
+
+  async function handleTestConnection() {
+    setTestingConnection(true);
+    setConnectionStatus({ tested: false });
+    try {
+      const res = await aiApi.testConnection({
+        provider,
+        api_key: apiKey || undefined,
+        base_url: baseUrl || undefined,
+        model: model || undefined,
+      });
+      setConnectionStatus({
+        tested: true,
+        success: res.success,
+        message: res.message,
+        latency_ms: res.latency_ms,
+      });
+    } catch (err: any) {
+      setConnectionStatus({
+        tested: true,
+        success: false,
+        message: err.message || 'Connection test failed',
+      });
+    } finally {
+      setTestingConnection(false);
+    }
   }
 
   function resetAll() {
@@ -117,7 +211,14 @@ export function SettingsPage() {
     saveExec(execDefaults);
     setSettings(defaults);
     setExecSettings(execDefaults);
-    syncRemotePreferences(defaults, execDefaults);
+    const defaultLLM = saveLLMConfig({
+      provider: 'groq',
+      apiKey: '',
+      model: PROVIDER_PRESETS['groq'].defaultModel,
+      baseUrl: PROVIDER_PRESETS['groq'].defaultBaseUrl,
+    });
+    setLlmConfig(defaultLLM);
+    syncRemotePreferences(defaults, execDefaults, defaultLLM);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -216,6 +317,225 @@ export function SettingsPage() {
               </div>
             </SettingCard>
 
+          </div>
+
+          {/* AI Agent & BYOK LLM Configuration Section */}
+          <div style={{ marginTop: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <Bot size={18} style={{ color: '#3b82f6' }} />
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  AI Agent & LLM Configuration (BYOK)
+                </h2>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                  Bring Your Own Key: Configure your personal LLM API provider or leave empty to use system defaults.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 20 }}>
+              {/* Provider Selection */}
+              <SettingCard
+                icon={<Bot size={18} />}
+                title="LLM Provider"
+                description="Select which LLM provider powers the autonomous coding agent."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <select
+                    value={provider}
+                    onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-2)',
+                      color: 'var(--text-primary)',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      outline: 'none',
+                    }}
+                  >
+                    {Object.values(PROVIDER_PRESETS).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    💡 {PROVIDER_PRESETS[provider]?.helpText}
+                  </div>
+                </div>
+              </SettingCard>
+
+              {/* API Key */}
+              <SettingCard
+                icon={<KeyRound size={18} />}
+                title={PROVIDER_PRESETS[provider]?.requiresKey ? 'Personal API Key' : 'API Key (Optional)'}
+                description="Your key is stored client-side in browser storage. Never logged or saved on the server."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showKey ? 'text' : 'password'}
+                      value={apiKey}
+                      onChange={(e) => updateLLM({ apiKey: e.target.value })}
+                      placeholder={PROVIDER_PRESETS[provider]?.keyPlaceholder || 'Enter your personal API key'}
+                      style={{
+                        width: '100%',
+                        padding: '10px 38px 10px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-2)',
+                        color: 'var(--text-primary)',
+                        fontSize: 13,
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      style={{
+                        position: 'absolute',
+                        right: 10,
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      title={showKey ? 'Hide key' : 'Show key'}
+                    >
+                      {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: apiKey ? 'var(--aurora-mint)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {apiKey ? '🔒 Custom API key configured' : '⚙️ No key entered (agent uses system default key)'}
+                  </div>
+                </div>
+              </SettingCard>
+
+              {/* Model Selection */}
+              <SettingCard
+                icon={<Sparkles size={18} />}
+                title="Model Name & Preset"
+                description="Choose a tested preset or provide a custom model identifier."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select
+                      value={PROVIDER_PRESETS[provider]?.models.includes(model) ? model : 'custom'}
+                      onChange={(e) => {
+                        if (e.target.value !== 'custom') {
+                          updateLLM({ model: e.target.value });
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-2)',
+                        color: 'var(--text-primary)',
+                        fontSize: 12.5,
+                        outline: 'none',
+                      }}
+                    >
+                      {PROVIDER_PRESETS[provider]?.models.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                      <option value="custom">Custom Model ID…</option>
+                    </select>
+                  </div>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => updateLLM({ model: e.target.value })}
+                    placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-2)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12.5,
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              </SettingCard>
+
+              {/* Base URL & Live Connection Probe */}
+              <SettingCard
+                icon={<Globe size={18} />}
+                title="API Base URL & Connection Test"
+                description="Verify live connectivity, response latency, and model availability."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <input
+                    type="text"
+                    value={baseUrl}
+                    onChange={(e) => updateLLM({ baseUrl: e.target.value })}
+                    placeholder="https://api.openai.com/v1"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-2)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12.5,
+                      outline: 'none',
+                    }}
+                  />
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={testingConnection}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 8,
+                        background: 'rgba(59, 130, 246, 0.15)',
+                        color: '#60a5fa',
+                        border: '1px solid rgba(59, 130, 246, 0.35)',
+                        cursor: testingConnection ? 'not-allowed' : 'pointer',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <Activity size={14} />
+                      {testingConnection ? 'Testing Connection...' : 'Test Connection'}
+                    </button>
+
+                    {connectionStatus.tested && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          color: connectionStatus.success ? 'var(--aurora-mint)' : '#ef4444',
+                        }}
+                      >
+                        {connectionStatus.success ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                        <span>{connectionStatus.message}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </SettingCard>
+            </div>
           </div>
 
           {/* Code Execution Section */}

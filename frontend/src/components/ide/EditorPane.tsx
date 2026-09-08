@@ -5,7 +5,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuthStore } from '../../store/authStore';
 import { type RemoteCursor, uint8ArrayToBase64 } from '../../hooks/useYjsDoc';
-import { Edit2, File, Palette, User, History, Bot, RefreshCw, X, Save, Folder } from 'lucide-react';
+import { Edit2, File, Palette, User, History, Bot, RefreshCw, X, Save, Folder, Sparkles, Trash2, Plus, Terminal as TermIcon, AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { CommitHistoryPanel } from './CommitHistoryPanel';
 import { extractTextFromYjsSnapshot } from './DiffViewerModal';
 import { Terminal } from '@xterm/xterm';
@@ -13,9 +13,12 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import * as Y from 'yjs';
 import { aiApi } from '../../api/ai';
+import { lspApi, type DiagnosticItem } from '../../api/lsp';
+import { formatCode } from '../../utils/formatter';
 import { toast } from '../shared/Toast';
 import { loadExecSettings } from '../../pages/SettingsPage';
 import type { DirectoryNode } from '../../api/directories';
+import { getVSCodeFileIcon } from './FileTree';
 
 interface EditorPaneProps {
   value: string;
@@ -39,6 +42,57 @@ interface EditorPaneProps {
   decrypt?: (cipherText: string) => string;
   onSave?: () => void;
   isSaving?: boolean;
+}
+
+function getXtermTheme(isDark: boolean) {
+  if (isDark) {
+    return {
+      background: '#0c0d10',
+      foreground: '#e0e6ed',
+      cursor: '#01EFAC',
+      cursorAccent: '#0c0d10',
+      selectionBackground: 'rgba(33, 105, 218, 0.4)',
+      black: '#151518',
+      red: '#ef4444',
+      green: '#10b981',
+      yellow: '#f59e0b',
+      blue: '#3b82f6',
+      magenta: '#c084fc',
+      cyan: '#06b6d4',
+      white: '#f8fafc',
+      brightBlack: '#64748b',
+      brightRed: '#f87171',
+      brightGreen: '#34d399',
+      brightYellow: '#fbbf24',
+      brightBlue: '#60a5fa',
+      brightMagenta: '#e879f9',
+      brightCyan: '#22d3ee',
+      brightWhite: '#ffffff',
+    };
+  }
+  return {
+    background: '#ffffff',
+    foreground: '#0f172a',
+    cursor: '#2563eb',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(37, 99, 235, 0.25)',
+    black: '#0f172a',
+    red: '#dc2626',
+    green: '#16a34a',
+    yellow: '#d97706',
+    blue: '#2563eb',
+    magenta: '#9333ea',
+    cyan: '#0284c7',
+    white: '#334155', // High-contrast readable slate in light mode (replaces invisible #ffffff)
+    brightBlack: '#64748b',
+    brightRed: '#ef4444',
+    brightGreen: '#22c55e',
+    brightYellow: '#b45309',
+    brightBlue: '#1d4ed8',
+    brightMagenta: '#7c3aed',
+    brightCyan: '#0369a1',
+    brightWhite: '#0f172a',
+  };
 }
 
 export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBranchPrompt, onJoinSharedRoom, peers = [], cursors = [], onCursorChange, runTrigger = 0, onRunStateChange, onCommitRequest, projectId, projectName, branchId, fileId, tree = [], getDoc, decrypt, onSave, isSaving }: EditorPaneProps) {
@@ -92,10 +146,21 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
   const [terminalHeight, setTerminalHeight] = useState(250);
   const isDraggingRef = useRef(false);
 
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [terminalTabs, setTerminalTabs] = useState<{ id: string; name: string }[]>([
+    { id: '1', name: 'Terminal 1' },
+  ]);
+  const [activeTermId, setActiveTermId] = useState('1');
+
+  const terminalSessionsRef = useRef<Map<string, {
+    id: string;
+    term: Terminal;
+    fitAddon: FitAddon;
+    ws: WebSocket | null;
+  }>>(new Map());
+  const terminalContainersRef = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const monacoRef = useRef<typeof Monaco | null>(null);
+  const [lspDiagnostics, setLspDiagnostics] = useState<DiagnosticItem[]>([]);
 
   const [showHistory, setShowHistory] = useState(false);
   const [showCopilot, setShowCopilot] = useState(false);
@@ -103,6 +168,47 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
   const [copilotLoading, setCopilotLoading] = useState(false);
   const [showAiBadge, setShowAiBadge] = useState(false);
   const aiDecorationsRef = useRef<string[]>([]);
+
+  const handleFormat = useCallback(() => {
+    if (!editorRef.current || readOnly) return;
+    const currentCode = editorRef.current.getValue();
+    const formatted = formatCode(currentCode, language);
+    if (formatted !== currentCode) {
+      editorRef.current.setValue(formatted);
+      onChange(formatted);
+      setDirty(true);
+      toast('✓ Formatted document with Prettier engine', 'success');
+    } else {
+      toast('Document is already formatted', 'info');
+    }
+  }, [language, onChange, readOnly]);
+
+  // Real-time LSP diagnostics synchronization
+  useEffect(() => {
+    if (!value || !language || !editorRef.current) return;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await lspApi.analyze(value, language, openFile?.name);
+        setLspDiagnostics(res.diagnostics);
+        const errors = res.diagnostics.filter(d => d.severity === 'error').length;
+        const warnings = res.diagnostics.filter(d => d.severity === 'warning').length;
+        useEditorStore.getState().setDiagnosticCounts({ errors, warnings });
+        if (monacoRef.current && editorRef.current?.getModel()) {
+          const model = editorRef.current.getModel()!;
+          const markers: Monaco.editor.IMarkerData[] = res.diagnostics.map((d) => ({
+            startLineNumber: d.line,
+            startColumn: d.column,
+            endLineNumber: d.end_line,
+            endColumn: d.end_column,
+            message: d.message,
+            severity: d.severity === 'error' ? monacoRef.current!.MarkerSeverity.Error : monacoRef.current!.MarkerSeverity.Warning,
+          }));
+          monacoRef.current.editor.setModelMarkers(model, 'nulltor-lsp', markers);
+        }
+      } catch {}
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [value, language, openFile?.name]);
 
   // Function to highlight lines modified by AI with a fading shimmer
   const highlightAiChanges = useCallback((startLine = 1, endLine = 100) => {
@@ -213,81 +319,155 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
     document.addEventListener('mouseup', onMouseUp);
   }, [terminalHeight]);
 
-  // Mount/Unmount xterm
-  useEffect(() => {
-    if (showTerminal && terminalTab === 'terminal' && terminalRef.current && !xtermRef.current) {
-      const term = new Terminal({
-        theme: { 
-          background: '#000000', 
-          foreground: '#e0e6ed', 
-          cursor: '#01EFAC' 
-        },
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-        fontSize: 13,
-        cursorStyle: 'block',
-        cursorBlink: true,
-        convertEol: true,
-      });
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-      term.open(terminalRef.current);
-      
-      // Delay fit to ensure font metrics are loaded
-      setTimeout(() => {
-        try { fitAddon.fit(); } catch(e) {}
-      }, 50);
+  // Tab Session Initializer
+  const initTabSession = useCallback((tabId: string, container: HTMLDivElement, isShell = false) => {
+    if (terminalSessionsRef.current.has(tabId)) {
+      const existing = terminalSessionsRef.current.get(tabId)!;
+      try {
+        existing.fitAddon.fit();
+      } catch {}
+      return existing;
+    }
 
-      term.writeln('\x1b[36mReady. Press "Execute" to run code.\x1b[0m');
+    const isDark = theme === 'dark';
+    const term = new Terminal({
+      theme: getXtermTheme(isDark),
+      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+      fontSize: 13,
+      cursorStyle: 'block',
+      cursorBlink: true,
+      convertEol: true,
+    });
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(container);
 
-      xtermRef.current = term;
-      fitAddonRef.current = fitAddon;
+    const doFit = () => {
+      try {
+        fitAddon.fit();
+        term.refresh(0, Math.max(0, term.rows - 1));
+      } catch {}
+    };
+    requestAnimationFrame(doFit);
+    setTimeout(doFit, 60);
 
-      // Handle terminal input
-      term.onData(data => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(data);
+    // Handle Copy/Paste via keyboard shortcuts
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown') {
+        if (e.ctrlKey && e.code === 'KeyC' && term.hasSelection()) {
+          navigator.clipboard.writeText(term.getSelection());
+          term.clearSelection();
+          return false;
+        }
+        if (e.ctrlKey && e.code === 'KeyV') {
+          navigator.clipboard.readText().then((text) => {
+            const s = terminalSessionsRef.current.get(tabId);
+            if (s?.ws && s.ws.readyState === WebSocket.OPEN) {
+              s.ws.send(text);
+            }
+          }).catch(() => {});
+          return false;
+        }
+      }
+      return true;
+    });
+
+    let ws: WebSocket | null = null;
+
+    if (isShell) {
+      const token = localStorage.getItem('nulltor_token') || '';
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/terminal?token=${encodeURIComponent(token)}${projectId ? `&project_id=${projectId}` : ''}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        const safeCols = Math.max(40, term.cols || 80);
+        const safeRows = Math.max(10, term.rows || 24);
+        ws!.send(JSON.stringify({
+          token,
+          mode: 'shell',
+          cols: safeCols,
+          rows: safeRows,
+          timeout_seconds: 3600,
+        }));
+      };
+
+      ws.onmessage = (e) => {
+        term.write(e.data);
+        try {
+          fitAddon.fit();
+          term.refresh(0, Math.max(0, term.rows - 1));
+        } catch {}
+      };
+
+      ws.onerror = () => {
+        term.writeln('\r\n\x1b[31m[WebSocket Error] Shell connection failed.\x1b[0m\r\n');
+      };
+
+      ws.onclose = () => {
+        term.writeln('\r\n\x1b[33m[Shell process exited]\x1b[0m\r\n');
+      };
+
+      term.onData((data) => {
+        const s = terminalSessionsRef.current.get(tabId);
+        if (s?.ws && s.ws.readyState === WebSocket.OPEN) {
+          s.ws.send(data);
         }
       });
-
-      // Handle Copy/Paste via keyboard shortcuts
-      term.attachCustomKeyEventHandler((e) => {
-        if (e.type === 'keydown') {
-          // Ctrl+C (Copy if text is selected)
-          if (e.ctrlKey && e.code === 'KeyC' && term.hasSelection()) {
-            navigator.clipboard.writeText(term.getSelection());
-            term.clearSelection();
-            return false;
-          }
-          // Ctrl+V (Paste)
-          if (e.ctrlKey && e.code === 'KeyV') {
-            navigator.clipboard.readText().then(text => {
-              if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                wsRef.current.send(text);
-              }
-            }).catch(() => {});
-            return false;
-          }
+    } else {
+      term.writeln('\x1b[36mReady. Press "Run" to execute code or "+" for an interactive shell.\x1b[0m');
+      term.onData((data) => {
+        const s = terminalSessionsRef.current.get(tabId);
+        if (s?.ws && s.ws.readyState === WebSocket.OPEN) {
+          s.ws.send(data);
         }
-        return true;
       });
     }
 
-    return () => {
-      // Don't dispose on every render, just keep it mounted or handle carefully
-    };
-  }, [showTerminal, terminalTab, openFile]);
+    const session = { id: tabId, term, fitAddon, ws };
+    terminalSessionsRef.current.set(tabId, session);
+    return session;
+  }, [theme, projectId]);
 
-  // Handle Resize fitting
+  // Synchronize xterm theme across all sessions
   useEffect(() => {
-    if (fitAddonRef.current && xtermRef.current) {
-      fitAddonRef.current.fit();
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({ type: 'resize', cols: xtermRef.current.cols, rows: xtermRef.current.rows }));
-        } catch {}
+    const isDark = theme === 'dark';
+    for (const session of terminalSessionsRef.current.values()) {
+      session.term.options.theme = getXtermTheme(isDark);
+      try {
+        session.fitAddon.fit();
+        session.term.refresh(0, Math.max(0, session.term.rows - 1));
+      } catch {}
+    }
+  }, [theme]);
+
+  // Handle Resize fitting across sessions
+  useEffect(() => {
+    for (const [id, session] of terminalSessionsRef.current.entries()) {
+      try {
+        session.fitAddon.fit();
+        session.term.refresh(0, Math.max(0, session.term.rows - 1));
+        if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+          session.ws.send(JSON.stringify({ type: 'resize', cols: session.term.cols, rows: session.term.rows }));
+        }
+      } catch {}
+    }
+  }, [terminalHeight, showTerminal, activeTermId]);
+
+  // Focus and fit active tab session when switching tabs
+  useEffect(() => {
+    if (showTerminal && terminalTab === 'terminal') {
+      const session = terminalSessionsRef.current.get(activeTermId);
+      if (session) {
+        setTimeout(() => {
+          try {
+            session.fitAddon.fit();
+            session.term.focus();
+          } catch {}
+        }, 30);
       }
     }
-  }, [terminalHeight, showTerminal]);
+  }, [activeTermId, showTerminal, terminalTab]);
 
   // Run Trigger
   useEffect(() => {
@@ -299,59 +479,106 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
     // eslint-disable-next-line
   }, [runTrigger]);
 
-    function handleRun() {
-    if (!xtermRef.current) return;
-    const term = xtermRef.current;
-    
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
+  function handleRun() {
+    setShowTerminal(true);
+    setTerminalTab('terminal');
 
-    // Reset the terminal so winpty's coordinate system (1,1) perfectly matches xterm.js
-    term.reset();
-    onRunStateChange?.(true);
+    // Give React 50ms to mount and layout the terminal container if it was hidden
+    setTimeout(() => {
+      let targetTabId = activeTermId;
+      let session = terminalSessionsRef.current.get(targetTabId);
+      if (!session) {
+        targetTabId = '1';
+        setActiveTermId('1');
+        const container = terminalContainersRef.current.get('1');
+        if (container) {
+          session = initTabSession('1', container, false);
+        }
+      }
 
-    const code = editorRef.current?.getValue() || '';
-    
-    // Connect to WebSocket using same host but ws protocol
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/terminal`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+      if (!session) return;
+      const term = session.term;
 
-    const safetyTimer = setTimeout(() => {
-      onRunStateChange?.(false);
-    }, 6000);
+      if (session.ws) {
+        try {
+          session.ws.onclose = null;
+          session.ws.onerror = null;
+          session.ws.close();
+        } catch {}
+        session.ws = null;
+      }
 
-    ws.onopen = () => {
-      const execSettings = loadExecSettings();
-      ws.send(JSON.stringify({
-        code,
-        language,
-        cols: term.cols,
-        rows: term.rows,
-        use_docker: execSettings.dockerSandbox,
-        timeout_seconds: execSettings.timeoutSeconds,
-      }));
-    };
+      // Reset the terminal and ensure theme & layout coordinate system match perfectly
+      term.reset();
+      term.options.theme = getXtermTheme(theme === 'dark');
+      try {
+        session.fitAddon.fit();
+        term.refresh(0, Math.max(0, term.rows - 1));
+        term.focus();
+      } catch {}
+      onRunStateChange?.(true);
 
-    ws.onmessage = (e) => {
-      term.write(e.data);
-      onRunStateChange?.(false);
-      clearTimeout(safetyTimer);
-    };
+      const fileName = openFile?.name || 'script.py';
 
-    ws.onerror = () => {
-      term.writeln('\r\n\x1b[31mWebSocket Connection Error\x1b[0m');
-      onRunStateChange?.(false);
-      clearTimeout(safetyTimer);
-    };
+      const activeCode = editorRef.current?.getValue() || value || '';
+      const activeLang = openFile?.name?.endsWith('.py')
+        ? 'python'
+        : openFile?.name?.endsWith('.js')
+        ? 'javascript'
+        : openFile?.name?.endsWith('.ts')
+        ? 'typescript'
+        : (language || 'python');
 
-    ws.onclose = () => {
-      onRunStateChange?.(false);
-      clearTimeout(safetyTimer);
-    };
+      // Connect to WebSocket using same host but ws protocol with authenticated JWT
+      const token = localStorage.getItem('nulltor_token') || '';
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/terminal?token=${encodeURIComponent(token)}${projectId ? `&project_id=${projectId}` : ''}`;
+      const ws = new WebSocket(wsUrl);
+      session.ws = ws;
+
+      const safetyTimer = setTimeout(() => {
+        onRunStateChange?.(false);
+      }, 8000);
+
+      ws.onopen = () => {
+        const execSettings = loadExecSettings();
+        const safeCols = Math.max(40, term.cols || 80);
+        const safeRows = Math.max(10, term.rows || 24);
+
+        ws.send(JSON.stringify({
+          token,
+          mode: 'exec',
+          code: activeCode,
+          language: activeLang,
+          cols: safeCols,
+          rows: safeRows,
+          use_docker: execSettings.dockerSandbox,
+          timeout_seconds: execSettings.timeoutSeconds,
+          filename: fileName,
+        }));
+      };
+
+      ws.onmessage = (e) => {
+        term.write(e.data);
+        try {
+          session.fitAddon.fit();
+          term.refresh(0, Math.max(0, term.rows - 1));
+        } catch {}
+        onRunStateChange?.(false);
+        clearTimeout(safetyTimer);
+      };
+
+      ws.onerror = () => {
+        term.writeln('\r\n\x1b[31m[Error] WebSocket terminal connection failed.\x1b[0m\r\n');
+        onRunStateChange?.(false);
+        clearTimeout(safetyTimer);
+      };
+
+      ws.onclose = () => {
+        onRunStateChange?.(false);
+        clearTimeout(safetyTimer);
+      };
+    }, 50);
   }
 
   // Live cursor position state for showing user name badge
@@ -360,8 +587,14 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
   const decorationsRef = useRef<string[]>([]);
 
   function handleMount(editor: Monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof Monaco) {
+    monacoRef.current = monacoInstance;
     editorRef.current = editor;
     editor.focus();
+
+    // Register Format Document Shortcut (Shift+Alt+F)
+    editor.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyMod.Alt | monacoInstance.KeyCode.KeyF, () => {
+      handleFormat();
+    });
 
     // Define sleek custom developer dark theme with Sapphire Blue primary
     monacoInstance.editor.defineTheme('nulltor-dark-pro', {
@@ -398,6 +631,7 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
     editor.onDidChangeCursorPosition((e) => {
       const { lineNumber, column } = e.position;
       setCursorPos({ line: lineNumber, column });
+      useEditorStore.getState().setCursorPos({ line: lineNumber, column });
       onCursorChange?.(lineNumber, column);
     });
 
@@ -530,12 +764,7 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
           {openTabs.map((tab) => {
             const isActive = tab.id === openFile.id;
             const isTabDirty = isActive && isDirty;
-            const ext = tab.name.split('.').pop()?.toLowerCase() ?? '';
-            const tabIcon = ['ts','tsx'].includes(ext) ? <span style={{ color: '#3178c6' }}><File size={13} /></span>
-              : ['js','jsx'].includes(ext) ? <span style={{ color: '#f7df1e' }}><File size={13} /></span>
-              : ext === 'py' ? <span style={{ color: '#3776AB' }}><File size={13} /></span>
-              : ext === 'css' ? <span style={{ color: '#38bdf8' }}><Palette size={13} /></span>
-              : <span style={{ color: 'var(--text-muted)' }}><File size={13} /></span>;
+            const tabIcon = getVSCodeFileIcon(tab.name, false, false, 13);
             return (
               <div
                 key={tab.id}
@@ -604,6 +833,23 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
           >
             <Bot size={13} /> Agent
           </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleFormat}
+            disabled={readOnly}
+            style={{
+              fontSize: '11px',
+              padding: '2px 8px',
+              color: 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title="Format Document with Prettier (Shift+Alt+F)"
+          >
+            <Sparkles size={11} style={{ color: '#f59e0b' }} />
+            <span>Format</span>
+          </button>
           {onSave && !readOnly && (
             <button
               className="btn btn-ghost btn-sm"
@@ -651,7 +897,7 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         </div>
       </div>
 
-      {/* Sub-Header matching Mockup: Encrypted Scope Badge (Left) <--> Breadcrumbs (Right) */}
+      {/* Sub-Header: Encrypted Scope Badge (Left) <--> Breadcrumbs (Right) */}
       <div style={{
         height: '32px',
         padding: '0 16px',
@@ -659,25 +905,25 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
         alignItems: 'center',
         justifyContent: 'space-between',
         fontSize: '12px',
-        background: '#141518',
-        borderBottom: '1px solid #1f2128',
+        background: 'var(--bg-1)',
+        borderBottom: '1px solid var(--border)',
       }}>
         {/* Left: Compact E2EE / Shared Status Badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 600 }}>
           <span style={{ fontSize: '12px' }}>🔒</span>
-          <span style={{ color: '#94a3b8' }}>
+          <span style={{ color: 'var(--text-secondary)' }}>
             {isSharedModeActive ? 'Shared main branch' : 'main'} · <strong style={{ color: '#10b981', fontWeight: 600 }}>encrypted</strong>
           </span>
         </div>
 
         {/* Right: Real Dynamic Workspace Breadcrumbs */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#64748b', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-muted)', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {projectName && (
             <>
-              <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                 <Folder size={11} /> {projectName}
               </span>
-              <span style={{ color: '#475569' }}>/</span>
+              <span style={{ color: 'var(--text-muted)' }}>/</span>
             </>
           )}
           {(() => {
@@ -698,8 +944,8 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
               const isLast = idx === pathSegments.length - 1;
               return (
                 <React.Fragment key={idx}>
-                  {idx > 0 && <span style={{ color: '#475569' }}>/</span>}
-                  <span style={{ color: isLast ? '#f8fafc' : '#94a3b8', fontWeight: isLast ? 600 : 400 }}>
+                  {idx > 0 && <span style={{ color: 'var(--text-muted)' }}>/</span>}
+                  <span style={{ color: isLast ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isLast ? 600 : 400 }}>
                     {segment}
                   </span>
                 </React.Fragment>
@@ -921,37 +1167,45 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
             }}
           />
           <div className="ide-terminal-header">
-            <div style={{ display: 'flex', gap: '16px', paddingLeft: '8px' }}>
+            <div style={{ display: 'flex', gap: '16px', paddingLeft: '8px', alignItems: 'center' }}>
               <button
                 style={{
                   background: 'none', border: 'none', outline: 'none',
                   color: terminalTab === 'terminal' ? 'var(--text-primary)' : 'var(--text-muted)',
-                  borderBottom: terminalTab === 'terminal' ? '1px solid var(--aurora-cyan)' : '1px solid transparent',
-                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'terminal' ? 600 : 500,
-                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em'
+                  borderBottom: terminalTab === 'terminal' ? '2px solid var(--aurora-cyan)' : '2px solid transparent',
+                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'terminal' ? 700 : 500,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
+                  display: 'flex', alignItems: 'center', gap: '5px',
                 }}
                 onClick={() => setTerminalTab('terminal')}
               >
-                TERMINAL
+                <TermIcon size={12} />
+                <span>TERMINAL</span>
               </button>
               <button
                 style={{
                   background: 'none', border: 'none', outline: 'none',
                   color: terminalTab === 'problems' ? 'var(--text-primary)' : 'var(--text-muted)',
-                  borderBottom: terminalTab === 'problems' ? '1px solid var(--aurora-cyan)' : '1px solid transparent',
-                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'problems' ? 600 : 500,
-                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em'
+                  borderBottom: terminalTab === 'problems' ? '2px solid var(--aurora-cyan)' : '2px solid transparent',
+                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'problems' ? 700 : 500,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
+                  display: 'flex', alignItems: 'center', gap: '5px',
                 }}
                 onClick={() => setTerminalTab('problems')}
               >
-                PROBLEMS (0)
+                {lspDiagnostics.length > 0 ? (
+                  <AlertCircle size={12} style={{ color: '#ef4444' }} />
+                ) : (
+                  <CheckCircle2 size={12} style={{ color: '#10b981' }} />
+                )}
+                <span>PROBLEMS ({lspDiagnostics.length})</span>
               </button>
               <button
                 style={{
                   background: 'none', border: 'none', outline: 'none',
                   color: terminalTab === 'output' ? 'var(--text-primary)' : 'var(--text-muted)',
-                  borderBottom: terminalTab === 'output' ? '1px solid var(--aurora-cyan)' : '1px solid transparent',
-                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'output' ? 600 : 500,
+                  borderBottom: terminalTab === 'output' ? '2px solid var(--aurora-cyan)' : '2px solid transparent',
+                  padding: '8px 4px', fontSize: '11px', fontWeight: terminalTab === 'output' ? 700 : 500,
                   cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em'
                 }}
                 onClick={() => setTerminalTab('output')}
@@ -960,26 +1214,167 @@ export function EditorPane({ value, onChange, readOnly, isSharedModeActive, onBr
               </button>
             </div>
 
-            <button className="btn-icon" style={{ width: '22px', height: '22px' }} onClick={() => setShowTerminal(false)}>
-              ×
-            </button>
+            {/* Right Controls: Multi-Tab Selector + Clear + Close */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '6px' }}>
+              {terminalTab === 'terminal' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {terminalTabs.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTermId(t.id)}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        borderRadius: '4px',
+                        background: activeTermId === t.id ? 'var(--bg-2)' : 'transparent',
+                        border: `1px solid ${activeTermId === t.id ? 'var(--border)' : 'transparent'}`,
+                        color: activeTermId === t.id ? 'var(--text-primary)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: activeTermId === t.id ? 600 : 400,
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {
+                      const nextNum = terminalTabs.length + 1;
+                      const nextId = String(Date.now());
+                      setTerminalTabs((prev) => [...prev, { id: nextId, name: `Terminal ${nextNum}` }]);
+                      setActiveTermId(nextId);
+                    }}
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '11px',
+                      borderRadius: '4px',
+                      background: 'transparent',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                    title="New Interactive Terminal"
+                  >
+                    <Plus size={11} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (terminalTabs.length > 1) {
+                        const session = terminalSessionsRef.current.get(activeTermId);
+                        if (session) {
+                          try {
+                            session.ws?.close();
+                            session.term.dispose();
+                          } catch {}
+                          terminalSessionsRef.current.delete(activeTermId);
+                        }
+                        const remaining = terminalTabs.filter((t) => t.id !== activeTermId);
+                        setTerminalTabs(remaining);
+                        setActiveTermId(remaining[remaining.length - 1].id);
+                      } else {
+                        const session = terminalSessionsRef.current.get(activeTermId);
+                        session?.term.clear();
+                      }
+                    }}
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '11px',
+                      borderRadius: '4px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                    }}
+                    title={terminalTabs.length > 1 ? 'Close Active Terminal' : 'Clear Terminal Output'}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              )}
+              <button className="btn-icon" style={{ width: '22px', height: '22px' }} onClick={() => setShowTerminal(false)}>
+                ×
+              </button>
+            </div>
           </div>
 
-          <div className="ide-terminal-body" style={{ padding: 0, overflow: 'hidden', height: '100%', background: '#000000' }}>
-            <div 
-              ref={terminalRef} 
-              style={{ 
-                height: '100%', 
-                width: '100%', 
-                background: '#000000',
-                display: terminalTab === 'terminal' ? 'block' : 'none',
-              }} 
-            />
+          <div className="ide-terminal-body" style={{ padding: 0, overflow: 'hidden', height: '100%', background: 'var(--bg-0)', position: 'relative' }}>
+            {terminalTabs.map((t) => (
+              <div
+                key={t.id}
+                ref={(el) => {
+                  if (el) {
+                    terminalContainersRef.current.set(t.id, el);
+                    initTabSession(t.id, el, t.id !== '1');
+                  } else {
+                    terminalContainersRef.current.delete(t.id);
+                  }
+                }}
+                style={{
+                  height: '100%',
+                  width: '100%',
+                  background: 'var(--bg-0)',
+                  display: terminalTab === 'terminal' && activeTermId === t.id ? 'block' : 'none',
+                }}
+              />
+            ))}
             {terminalTab === 'problems' && (
-              <div style={{ padding: '12px', color: 'var(--text-secondary)' }}>No lint errors or syntax issues detected.</div>
+              <div style={{ height: '100%', overflowY: 'auto', padding: '8px 12px' }}>
+                {lspDiagnostics.length === 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '12px', padding: '12px 0' }}>
+                    <CheckCircle2 size={15} />
+                    <span>No syntax or lint issues detected in {openFile.name}.</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {lspDiagnostics.map((d, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          if (editorRef.current) {
+                            editorRef.current.revealPositionInCenter({ lineNumber: d.line, column: d.column });
+                            editorRef.current.setPosition({ lineNumber: d.line, column: d.column });
+                            editorRef.current.focus();
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 8px',
+                          borderRadius: '4px',
+                          background: 'var(--bg-1)',
+                          border: '1px solid var(--border)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-1)'}
+                      >
+                        {d.severity === 'error' ? (
+                          <AlertCircle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
+                        ) : (
+                          <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                        )}
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Line {d.line}:{d.column}
+                        </span>
+                        <span style={{ color: 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {d.message}
+                        </span>
+                        <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>{openFile.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {terminalTab === 'output' && (
-              <div style={{ padding: '12px', color: 'var(--text-secondary)' }}>[Nulltor Build Engine] Standalone bundle ready in public_react.</div>
+              <div style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '12px', fontFamily: 'monospace' }}>
+                <div>[Nulltor Language Server] Multi-Language LSP Active.</div>
+                <div>[Nulltor Compiler Sandbox] Output & PTY channels ready.</div>
+              </div>
             )}
           </div>
         </div>

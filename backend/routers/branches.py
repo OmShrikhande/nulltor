@@ -278,19 +278,49 @@ async def create_branch(
             
             if copy_params:
                 try:
+                    import hashlib
                     for cp in copy_params:
-                        await db.execute(
+                        res = await db.execute(
                             text("""
-                                INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
-                                SELECT :new_id, :new_branch, data, CURRENT_TIMESTAMP
-                                FROM file_snapshots
+                                SELECT data FROM file_snapshots
                                 WHERE file_id = :old_id AND (branch_id = :old_branch OR branch_id = 'main')
                                 ORDER BY updated_at DESC LIMIT 1
-                                ON CONFLICT (file_id, branch_id) DO UPDATE
-                                SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
                             """),
-                            cp
+                            {"old_id": cp["old_id"], "old_branch": cp["old_branch"]}
                         )
+                        row = res.fetchone()
+                        if row and row[0]:
+                            data = row[0]
+                            blob_hash = hashlib.sha256(data.encode('utf-8')).hexdigest()
+                            size_bytes = len(data.encode('utf-8'))
+                            room_key = f"{cp['new_id']}::{cp['new_branch']}"
+
+                            await db.execute(
+                                text("""
+                                    INSERT INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
+                                    VALUES (:hash, :data, :size, FALSE, CURRENT_TIMESTAMP)
+                                    ON CONFLICT (hash) DO NOTHING
+                                """),
+                                {"hash": blob_hash, "data": data, "size": size_bytes}
+                            )
+                            await db.execute(
+                                text("""
+                                    INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
+                                    VALUES (:room_key, :hash, CURRENT_TIMESTAMP)
+                                    ON CONFLICT (room_key) DO UPDATE
+                                    SET blob_hash = EXCLUDED.blob_hash, updated_at = CURRENT_TIMESTAMP
+                                """),
+                                {"room_key": room_key, "hash": blob_hash}
+                            )
+                            await db.execute(
+                                text("""
+                                    INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                                    VALUES (:new_id, :new_branch, :data, CURRENT_TIMESTAMP)
+                                    ON CONFLICT (file_id, branch_id) DO UPDATE
+                                    SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+                                """),
+                                {"new_id": cp["new_id"], "new_branch": cp["new_branch"], "data": data}
+                            )
                     await db.flush()
                 except Exception as e:
                     print("Failed to copy file_snapshots on branch fork:", e)
@@ -636,54 +666,97 @@ async def sync_branch(
     await _assert_branch_access(db, target_branch, user, membership)
     await _assert_branch_access(db, source_branch, user, membership)
 
+    import hashlib
     from routers.merges import _ensure_target_file_node, _resolve_target_file_id
     from core.database import engine
     from sqlalchemy import text
     from models.commit import Commit
+    from models.directory import Directory, NodeType
 
     target_file_id = None
     synced_snapshot = payload.custom_snapshot
+    active_file_snapshot = None
+    synced_files_count = 0
 
-    if payload.file_id:
+    async def _write_tri_storage(conn, fid: str, bid: str, data: str):
+        blob_hash = hashlib.sha256(data.encode('utf-8')).hexdigest()
+        size_bytes = len(data.encode('utf-8'))
+        room_key = f"{fid}::{bid}"
+        
+        # 1. CAS encrypted_blobs
+        await conn.execute(
+            text("""
+                INSERT INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
+                VALUES (:hash, :data, :size, FALSE, CURRENT_TIMESTAMP)
+                ON CONFLICT (hash) DO NOTHING
+            """),
+            {"hash": blob_hash, "data": data, "size": size_bytes},
+        )
+        # 2. Gateway live_keyframes
+        await conn.execute(
+            text("""
+                INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
+                VALUES (:room_key, :hash, CURRENT_TIMESTAMP)
+                ON CONFLICT (room_key) DO UPDATE
+                SET blob_hash = EXCLUDED.blob_hash, updated_at = CURRENT_TIMESTAMP
+            """),
+            {"room_key": room_key, "hash": blob_hash},
+        )
+        # 3. Persistent file_snapshots
+        await conn.execute(
+            text("""
+                INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP)
+                ON CONFLICT (file_id, branch_id) DO UPDATE
+                SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+            """),
+            {"fid": fid, "bid": bid, "data": data},
+        )
+
+    async def _read_source_snapshot(conn, sfid: str, sbid: str) -> Optional[str]:
+        # 1. Try live_keyframes JOIN encrypted_blobs
+        res = await conn.execute(
+            text("""
+                SELECT eb.ciphertext 
+                FROM live_keyframes lk
+                JOIN encrypted_blobs eb ON lk.blob_hash = eb.hash
+                WHERE lk.room_key = :rkey
+            """),
+            {"rkey": f"{sfid}::{sbid}"}
+        )
+        row = res.fetchone()
+        if row and row[0]:
+            return row[0]
+            
+        # 2. Try file_snapshots on source branch or main
+        res = await conn.execute(
+            text("""
+                SELECT data FROM file_snapshots 
+                WHERE file_id = :sfid AND (branch_id = :sbid OR branch_id = 'main')
+                ORDER BY updated_at DESC LIMIT 1
+            """),
+            {"sfid": sfid, "sbid": sbid}
+        )
+        row = res.fetchone()
+        if row and row[0]:
+            return row[0]
+            
+        return None
+
+    if payload.file_id and payload.file_id != '__all__':
+        # Single File Sync
         target_file_id = await _ensure_target_file_node(db, project_id, payload.file_id, branch_id, user.id)
         source_file_id = await _resolve_target_file_id(db, project_id, payload.file_id, payload.source_branch_id)
 
         if not synced_snapshot:
-            # Pull snapshot from source branch
-            try:
-                async with engine.begin() as conn:
-                    res = await conn.execute(
-                        text("""
-                            SELECT data FROM file_snapshots 
-                            WHERE (file_id = :sfid OR file_id = :fid) 
-                              AND (branch_id = :bid OR branch_id = 'main')
-                            ORDER BY updated_at DESC LIMIT 1
-                        """),
-                        {"sfid": source_file_id, "fid": payload.file_id, "bid": str(payload.source_branch_id)},
-                    )
-                    row = res.fetchone()
-                    if row:
-                        synced_snapshot = row[0]
-            except Exception as e:
-                print("Failed to read source snapshot during sync:", e)
+            async with engine.begin() as conn:
+                synced_snapshot = await _read_source_snapshot(conn, source_file_id, str(payload.source_branch_id))
 
         if synced_snapshot:
-            # Write to target branch snapshot
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        text("""
-                            INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
-                            VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP)
-                            ON CONFLICT (file_id, branch_id) DO UPDATE
-                            SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
-                        """),
-                        {"fid": target_file_id, "bid": str(branch_id), "data": synced_snapshot},
-                    )
-            except Exception as e:
-                print("Failed to save synced snapshot:", e)
+            async with engine.begin() as conn:
+                await _write_tri_storage(conn, target_file_id, str(branch_id), synced_snapshot)
 
-            # Auto-create sync commit
+            active_file_snapshot = synced_snapshot
             sync_msg = payload.sync_message or f"⬇ Sync: Pulled updates from '{source_branch.name}'"
             sync_commit = Commit(
                 project_id=project_id,
@@ -695,6 +768,55 @@ async def sync_branch(
             )
             db.add(sync_commit)
             await db.flush()
+            synced_files_count = 1
+    else:
+        # Full Room / Branch Sync (All Files & Folders)
+        source_nodes_res = await db.execute(
+            select(Directory).where(
+                Directory.project_id == project_id,
+                Directory.branch_id == payload.source_branch_id
+            )
+        )
+        source_nodes = source_nodes_res.scalars().all()
+
+        # If source branch has no direct nodes, fall back to main branch nodes
+        if not source_nodes:
+            main_b_res = await db.execute(
+                select(Branch.id).where(Branch.project_id == project_id, Branch.type == BranchType.main)
+            )
+            main_b_id = main_b_res.scalar_one_or_none()
+            if main_b_id:
+                source_nodes_res = await db.execute(
+                    select(Directory).where(Directory.project_id == project_id, Directory.branch_id == main_b_id)
+                )
+                source_nodes = source_nodes_res.scalars().all()
+
+        for node in source_nodes:
+            if node.type == NodeType.file:
+                t_fid = await _ensure_target_file_node(db, project_id, str(node.id), branch_id, user.id)
+                try:
+                    async with engine.begin() as conn:
+                        data = await _read_source_snapshot(conn, str(node.id), str(payload.source_branch_id))
+                        if data:
+                            await _write_tri_storage(conn, t_fid, str(branch_id), data)
+                            if payload.active_file_id and (payload.active_file_id in (str(t_fid), str(node.id))):
+                                active_file_snapshot = data
+                                target_file_id = t_fid
+                except Exception as e:
+                    print("Failed to sync file node snapshot:", e)
+                synced_files_count += 1
+
+        sync_msg = payload.sync_message or f"⬇ Sync: Pulled entire room ({synced_files_count} files) from '{source_branch.name}'"
+        sync_commit = Commit(
+            project_id=project_id,
+            branch_id=branch_id,
+            file_id=str(branch_id),
+            user_id=user.id,
+            message=sync_msg,
+            snapshot=f"__room_sync_{synced_files_count}_files__",
+        )
+        db.add(sync_commit)
+        await db.flush()
 
     await log_action(
         db,
@@ -709,14 +831,18 @@ async def sync_branch(
             "source_branch_id": str(payload.source_branch_id),
             "source_branch_name": source_branch.name,
             "target_branch_name": target_branch.name,
-            "file_id": payload.file_id,
+            "file_id": payload.file_id or '__all__',
+            "synced_files_count": synced_files_count,
         },
         ip_address=get_client_ip(request),
     )
+    await db.commit()
 
     return {
         "status": "success",
-        "message": f"Successfully pulled latest changes from '{source_branch.name}' into '{target_branch.name}'",
+        "message": f"Successfully pulled {synced_files_count} file(s) from '{source_branch.name}' into '{target_branch.name}'",
         "target_file_id": target_file_id,
-        "snapshot": synced_snapshot,
+        "active_file_id": payload.active_file_id,
+        "snapshot": active_file_snapshot or synced_snapshot,
+        "synced_files_count": synced_files_count,
     }

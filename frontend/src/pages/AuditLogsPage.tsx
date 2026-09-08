@@ -11,15 +11,24 @@ export function AuditLogsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [resourceFilter, setResourceFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
-  const loadLogs = useCallback(async (p: number) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadLogs = useCallback(async (p: number, currentSearch: string = debouncedSearch) => {
     setLoading(true);
     try {
       const data = await logsApi.list({
         page: p,
         page_size: 40,
         resource_type: resourceFilter || undefined,
+        search: currentSearch.trim() || undefined,
       });
       if (p === 1) {
         setLogs(data.items);
@@ -32,14 +41,15 @@ export function AuditLogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [resourceFilter]);
+  }, [resourceFilter, debouncedSearch]);
 
   useEffect(() => {
     setPage(1);
-    loadLogs(1);
-  }, [loadLogs]);
+    loadLogs(1, debouncedSearch);
+  }, [resourceFilter, debouncedSearch]);
 
   const filteredLogs = logs.filter((log) => {
+    if (!search) return true;
     const term = search.toLowerCase();
     const actor = (log.actor_username || log.actor_id || '').toLowerCase();
     const action = log.action.toLowerCase();
@@ -409,7 +419,7 @@ export function AuditLogsPage() {
                 onClick={() => {
                   const nextPage = page + 1;
                   setPage(nextPage);
-                  loadLogs(nextPage);
+                  loadLogs(nextPage, debouncedSearch);
                 }}
               >
                 Load More Events ↓

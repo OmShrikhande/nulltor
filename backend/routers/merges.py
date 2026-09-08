@@ -295,29 +295,31 @@ async def get_merge_snapshots(
         raise HTTPException(status_code=403, detail="You do not have permission to access merge snapshots for this target branch")
 
     # Fetch target branch current snapshot from file_snapshots
-    # We resolve the target file ID from the source file ID first
-    target_file_id = await _resolve_target_file_id(db, project_id, mr.file_id, mr.target_branch_id)
-    
     target_snapshot = None
     target_updated_at = None
-    try:
-        from sqlalchemy import text
-        async with engine.begin() as conn:
-            row = await conn.execute(
-                text("SELECT data, updated_at FROM file_snapshots WHERE file_id = :fid AND branch_id = :bid"),
-                {"fid": target_file_id, "bid": str(mr.target_branch_id)},
-            )
-            r = row.fetchone()
-            if r:
-                target_snapshot = r[0]
-                target_updated_at = r[1].isoformat() if r[1] else None
-    except Exception:
-        target_snapshot = None
-        target_updated_at = None
+
+    if mr.file_id == '__all__':
+        target_snapshot = mr.pre_merge_snapshot or "__all__"
+    else:
+        target_file_id = await _resolve_target_file_id(db, project_id, mr.file_id, mr.target_branch_id)
+        try:
+            from sqlalchemy import text
+            async with engine.begin() as conn:
+                row = await conn.execute(
+                    text("SELECT data, updated_at FROM file_snapshots WHERE file_id = :fid AND branch_id = :bid"),
+                    {"fid": target_file_id, "bid": str(mr.target_branch_id)},
+                )
+                r = row.fetchone()
+                if r:
+                    target_snapshot = r[0]
+                    target_updated_at = r[1].isoformat() if r[1] else None
+        except Exception:
+            target_snapshot = None
+            target_updated_at = None
 
     return MergeSnapshotResponse(
         merge_request_id=mr.id,
-        pre_merge_snapshot=mr.pre_merge_snapshot,
+        pre_merge_snapshot=mr.pre_merge_snapshot or "__all__",
         target_snapshot=target_snapshot,
         target_updated_at=target_updated_at,
     )
@@ -329,29 +331,35 @@ async def get_merge_snapshots(
     "/{project_id}/merges",
     response_model=MergeRequestRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Initiate a merge request (source branch → target branch)",
+    summary="Create a new merge request (PR)",
 )
-async def create_merge_request(
+async def create_merge(
     project_id: UUID,
     payload: MergeRequestCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await _assert_project_membership(db, project_id, user)
+    membership = await _assert_project_membership(db, project_id, user)
 
-    source = await _get_branch(db, payload.source_branch_id, project_id)
-    target = await _get_branch(db, payload.target_branch_id, project_id)
+    source_branch = await _get_branch(db, payload.source_branch_id, project_id)
+    target_branch = await _get_branch(db, payload.target_branch_id, project_id)
+
+    await _assert_branch_access(db, source_branch, user, membership)
+    await _assert_branch_access(db, target_branch, user, membership)
+
+    if payload.source_branch_id == payload.target_branch_id:
+        raise HTTPException(status_code=400, detail="Source and target branch must be different")
 
     mr = MergeRequest(
         project_id=project_id,
         source_branch_id=payload.source_branch_id,
         target_branch_id=payload.target_branch_id,
         file_id=payload.file_id,
-        requested_by=user.id,
-        status=MergeStatus.pending,
-        pre_merge_snapshot=payload.pre_merge_snapshot,
+        pre_merge_snapshot=payload.pre_merge_snapshot or ("__all__" if payload.file_id == "__all__" else None),
         detail=payload.detail,
+        status=MergeStatus.pending,
+        requested_by=user.id,
     )
     db.add(mr)
     await db.flush()
@@ -365,9 +373,10 @@ async def create_merge_request(
         project_id=project_id,
         branch_id=payload.source_branch_id,
         detail={
-            "source_branch": source.name,
-            "target_branch": target.name,
+            "source_branch_id": str(payload.source_branch_id),
+            "target_branch_id": str(payload.target_branch_id),
             "file_id": payload.file_id,
+            "status": "pending",
         },
         ip_address=get_client_ip(request),
     )
@@ -375,12 +384,12 @@ async def create_merge_request(
     return MergeRequestRead.model_validate(mr)
 
 
-# ── Review Merge Request ──────────────────────────────────────────────────────
+# ── Review Merge Request (Approve / Reject) ───────────────────────────────────
 
-@router.post(
+@router.put(
     "/{project_id}/merges/{merge_id}/review",
     response_model=MergeRequestRead,
-    summary="Approve or reject a pending merge request",
+    summary="Approve or reject a merge request",
 )
 async def review_merge(
     project_id: UUID,
@@ -402,42 +411,40 @@ async def review_merge(
     if not await _can_review_merge(db, project_id, mr.target_branch_id, user):
         raise HTTPException(status_code=403, detail="You do not have permission to review merge requests for this target branch")
 
-    if mr.status != MergeStatus.pending:
-        raise HTTPException(status_code=400, detail=f"Merge request is already '{mr.status.value}'")
-
-    if payload.status not in (MergeStatus.approved, MergeStatus.rejected):
-        raise HTTPException(status_code=400, detail="Status must be 'approved' or 'rejected'")
-
     mr.status = payload.status
     mr.reviewed_by = user.id
-    mr.detail = {**mr.detail, **payload.detail, "reviewer_decision": payload.status.value}
+
+    if payload.detail:
+        new_detail = dict(mr.detail)
+        new_detail.update(payload.detail)
+        mr.detail = new_detail
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(mr, "detail")
+
     await db.flush()
 
+    audit_action = AuditAction.approve if payload.status == MergeStatus.approved else AuditAction.reject
     await log_action(
         db,
         actor_id=user.id,
-        action=AuditAction.merge_reviewed,
+        action=audit_action,
         resource_type=ResourceType.merge_request,
         resource_id=mr.id,
         project_id=project_id,
-        branch_id=mr.source_branch_id,
-        detail={
-            "decision": payload.status.value,
-            "source_branch_id": str(mr.source_branch_id),
-            "target_branch_id": str(mr.target_branch_id),
-        },
+        branch_id=mr.target_branch_id,
+        detail={"status": payload.status.value, "detail": payload.detail},
         ip_address=get_client_ip(request),
     )
 
     return MergeRequestRead.model_validate(mr)
 
 
-# ── Confirm Merge ─────────────────────────────────────────────────────────────
+# ── Confirm & Apply Merge (Submit merged CRDT snapshot) ─────────────────────────
 
 @router.post(
     "/{project_id}/merges/{merge_id}/confirm",
     response_model=MergeRequestRead,
-    summary="Submit the final merged snapshot (browser performed the CRDT merge)",
+    summary="Confirm and apply merge by saving final merged snapshot to target branch",
 )
 async def confirm_merge(
     project_id: UUID,
@@ -448,9 +455,8 @@ async def confirm_merge(
     user: User = Depends(get_current_user),
 ):
     """
-    After the browser has performed the Yjs CRDT merge and the user has reviewed
-    the diff, this endpoint receives the final encrypted merged snapshot and writes
-    it to the file_snapshots table for the target branch.
+    Called after browser-side CRDT merge.
+    Writes merged snapshot into target branch's snapshot row.
     """
     await _assert_project_membership(db, project_id, user)
 
@@ -470,61 +476,115 @@ async def confirm_merge(
     mr.status = MergeStatus.approved
     mr.reviewed_by = user.id
 
-    # Ensure the target file exists in the directories table for target branch
-    target_file_id = await _ensure_target_file_node(db, project_id, mr.file_id, mr.target_branch_id, user.id)
-
-    # Write merged snapshot to file_snapshots, encrypted_blobs, and live_keyframes for target branch
     from sqlalchemy import text
+    from models.directory import Directory, NodeType
+    from models.commit import Commit
     import hashlib
-    blob_hash = hashlib.sha256(payload.merged_snapshot.encode('utf-8')).hexdigest()
-    size_bytes = len(payload.merged_snapshot.encode('utf-8'))
-    room_key = f"{target_file_id}::{str(mr.target_branch_id)}"
 
-    try:
-        async with engine.begin() as conn:
-            # 1. CAS encrypted_blobs
-            await conn.execute(
-                text("""
-                    INSERT INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
-                    VALUES (:hash, :data, :size, FALSE, CURRENT_TIMESTAMP)
-                    ON CONFLICT (hash) DO NOTHING
-                """),
-                {"hash": blob_hash, "data": payload.merged_snapshot, "size": size_bytes},
+    if mr.file_id == '__all__':
+        # Merge Entire Room (All Files & Folders)
+        source_nodes_res = await db.execute(
+            select(Directory).where(
+                Directory.project_id == project_id,
+                Directory.branch_id == mr.source_branch_id
             )
-            # 2. live_keyframes
-            await conn.execute(
-                text("""
-                    INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
-                    VALUES (:room_key, :hash, CURRENT_TIMESTAMP)
-                    ON CONFLICT (room_key) DO UPDATE
-                    SET blob_hash = EXCLUDED.blob_hash, updated_at = CURRENT_TIMESTAMP
-                """),
-                {"room_key": room_key, "hash": blob_hash},
-            )
-            # 3. file_snapshots
-            await conn.execute(
-                text("""
-                    INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
-                    VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP)
-                    ON CONFLICT (file_id, branch_id) DO UPDATE
-                    SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
-                """),
-                {"fid": target_file_id, "bid": str(mr.target_branch_id), "data": payload.merged_snapshot},
-            )
-    except Exception as e:
-        print("Merge CAS/snapshot insert error:", e)
+        )
+        source_nodes = source_nodes_res.scalars().all()
 
-    # Store reference in merge request for audit purposes
-    mr.merged_snapshot = payload.merged_snapshot
-    new_detail = dict(mr.detail)
-    new_detail["is_merged"] = True
-    mr.detail = new_detail
-    from sqlalchemy.orm.attributes import flag_modified
-    flag_modified(mr, "detail")
-    
-    # Automatically create a merge commit on the target branch timeline
-    try:
-        from models.commit import Commit
+        if not source_nodes:
+            from models.branch import Branch, BranchType
+            main_b_res = await db.execute(
+                select(Branch.id).where(Branch.project_id == project_id, Branch.type == BranchType.main)
+            )
+            main_b_id = main_b_res.scalar_one_or_none()
+            if main_b_id:
+                source_nodes_res = await db.execute(
+                    select(Directory).where(Directory.project_id == project_id, Directory.branch_id == main_b_id)
+                )
+                source_nodes = source_nodes_res.scalars().all()
+
+        merged_count = 0
+        for node in source_nodes:
+            if node.type == NodeType.file:
+                t_fid = await _ensure_target_file_node(db, project_id, str(node.id), mr.target_branch_id, user.id)
+                try:
+                    async with engine.begin() as conn:
+                        res = await conn.execute(
+                            text("""
+                                SELECT data FROM file_snapshots 
+                                WHERE (file_id = :sfid) 
+                                  AND (branch_id = :sbid OR branch_id = 'main')
+                                ORDER BY updated_at DESC LIMIT 1
+                            """),
+                            {"sfid": str(node.id), "sbid": str(mr.source_branch_id)},
+                        )
+                        row = res.fetchone()
+                        if row and row[0]:
+                            await conn.execute(
+                                text("""
+                                    INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                                    VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP)
+                                    ON CONFLICT (file_id, branch_id) DO UPDATE
+                                    SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+                                """),
+                                {"fid": t_fid, "bid": str(mr.target_branch_id), "data": row[0]},
+                            )
+                except Exception as e:
+                    print("Failed to merge file node snapshot:", e)
+                merged_count += 1
+
+        merge_title = mr.detail.get("pr_title") or f"Merge room into {mr.target_branch_id}"
+        merge_commit = Commit(
+            project_id=project_id,
+            branch_id=mr.target_branch_id,
+            file_id=str(mr.target_branch_id),
+            user_id=user.id,
+            message=f"🔀 Merge: {merge_title} ({merged_count} files)",
+            snapshot=f"__room_merged_{merged_count}_files__",
+        )
+        db.add(merge_commit)
+    else:
+        # Single File Merge
+        target_file_id = await _ensure_target_file_node(db, project_id, mr.file_id, mr.target_branch_id, user.id)
+        blob_hash = hashlib.sha256(payload.merged_snapshot.encode('utf-8')).hexdigest()
+        size_bytes = len(payload.merged_snapshot.encode('utf-8'))
+        room_key = f"{target_file_id}::{str(mr.target_branch_id)}"
+
+        try:
+            async with engine.begin() as conn:
+                # 1. CAS encrypted_blobs
+                await conn.execute(
+                    text("""
+                        INSERT INTO encrypted_blobs (hash, ciphertext, size_bytes, is_binary, created_at)
+                        VALUES (:hash, :data, :size, FALSE, CURRENT_TIMESTAMP)
+                        ON CONFLICT (hash) DO NOTHING
+                    """),
+                    {"hash": blob_hash, "data": payload.merged_snapshot, "size": size_bytes},
+                )
+                # 2. live_keyframes
+                await conn.execute(
+                    text("""
+                        INSERT INTO live_keyframes (room_key, blob_hash, updated_at)
+                        VALUES (:room_key, :hash, CURRENT_TIMESTAMP)
+                        ON CONFLICT (room_key) DO UPDATE
+                        SET blob_hash = EXCLUDED.blob_hash, updated_at = CURRENT_TIMESTAMP
+                    """),
+                    {"room_key": room_key, "hash": blob_hash},
+                )
+                # 3. file_snapshots
+                await conn.execute(
+                    text("""
+                        INSERT INTO file_snapshots (file_id, branch_id, data, updated_at)
+                        VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP)
+                        ON CONFLICT (file_id, branch_id) DO UPDATE
+                        SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+                    """),
+                    {"fid": target_file_id, "bid": str(mr.target_branch_id), "data": payload.merged_snapshot},
+                )
+        except Exception as e:
+            print("Merge CAS/snapshot insert error:", e)
+
+        mr.merged_snapshot = payload.merged_snapshot
         merge_title = mr.detail.get("pr_title") or f"Merge branch {mr.source_branch_id} into {mr.target_branch_id}"
         merge_commit = Commit(
             project_id=project_id,
@@ -535,8 +595,12 @@ async def confirm_merge(
             snapshot=payload.merged_snapshot,
         )
         db.add(merge_commit)
-    except Exception as e:
-        print("Failed to record merge commit:", e)
+
+    new_detail = dict(mr.detail)
+    new_detail["is_merged"] = True
+    mr.detail = new_detail
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(mr, "detail")
 
     await db.flush()
 

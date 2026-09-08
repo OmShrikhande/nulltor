@@ -23,7 +23,8 @@ export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode 
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'create_file', project_id: projectId, branch_id: branchId, file_path: filename, content: initialContent })
           });
           const data = await res.json();
@@ -41,7 +42,8 @@ export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode 
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'read_file', project_id: projectId, branch_id: branchId, file_path: target })
           });
           const data = await res.json();
@@ -56,7 +58,8 @@ export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode 
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'write_file', project_id: projectId, branch_id: branchId, file_path: filename, content })
           });
           const data = await res.json();
@@ -76,7 +79,8 @@ export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode 
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'modify_file', project_id: projectId, branch_id: branchId, file_path: filename, content })
           });
           const data = await res.json();
@@ -96,7 +100,8 @@ export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode 
         try {
           const res = await fetch('/api/tools/execute', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ action: 'delete_file', project_id: projectId, branch_id: branchId, file_path: filename })
           });
           const data = await res.json();
@@ -112,7 +117,8 @@ export function BotpressPanel({ projectId, branchId, onRefreshTree, onApplyCode 
       listFiles: async () => {
         const res = await fetch('/api/tools/execute', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ action: 'list_files', project_id: projectId, branch_id: branchId })
         });
         return await res.json();

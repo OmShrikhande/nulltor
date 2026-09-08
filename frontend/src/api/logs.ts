@@ -30,6 +30,7 @@ export const logsApi = {
     actor_id?: string;
     action?: string;
     resource_type?: string;
+    search?: string;
   }) => {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
@@ -39,6 +40,7 @@ export const logsApi = {
     if (params?.actor_id) qs.set('actor_id', params.actor_id);
     if (params?.action) qs.set('action', params.action);
     if (params?.resource_type) qs.set('resource_type', params.resource_type);
+    if (params?.search) qs.set('search', params.search);
     return get<AuditLogList>(`/logs?${qs.toString()}`);
   },
 };

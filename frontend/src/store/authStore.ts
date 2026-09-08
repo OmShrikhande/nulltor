@@ -9,8 +9,13 @@ interface AuthState {
   logout: () => void;
   hydrate: () => void;
   /** Called by the API client after a silent token refresh to keep state in sync. */
-  hydrateTokens: (accessToken: string, refreshToken?: string) => void;
+  hydrateTokens: (accessToken: string) => void;
 }
+
+// Ensure no legacy refresh token persists in localStorage
+try {
+  localStorage.removeItem('nulltor_refresh_token');
+} catch {}
 
 const initialToken = localStorage.getItem('nulltor_token');
 const initialUserStr = localStorage.getItem('nulltor_user');
@@ -21,36 +26,58 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: initialUser,
   isAuthenticated: !!(initialToken && initialUser),
 
-  hydrate: () => {
-    const token = localStorage.getItem('nulltor_token');
+  hydrate: async () => {
+    try {
+      localStorage.removeItem('nulltor_refresh_token');
+      localStorage.removeItem('nulltor_token');
+    } catch {}
+
     const userStr = localStorage.getItem('nulltor_user');
-    const user = userStr ? (JSON.parse(userStr) as UserRead) : null;
-    if (token && user) {
-      set({ token, user, isAuthenticated: true });
+    const cachedUser = userStr ? (JSON.parse(userStr) as UserRead) : null;
+    if (cachedUser) {
+      set({ user: cachedUser, isAuthenticated: true });
+    }
+
+    try {
+      // Validate session with backend using HTTP-Only cookies
+      const me = await authApi.me();
+      localStorage.setItem('nulltor_user', JSON.stringify(me));
+      set({ user: me, isAuthenticated: true });
+    } catch {
+      // If authApi.me() failed, apiRequest already attempted silentRefresh().
+      // Clear user session cleanly.
+      localStorage.removeItem('nulltor_user');
+      sessionStorage.clear();
+      set({ token: null, user: null, isAuthenticated: false });
     }
   },
 
-  hydrateTokens: (accessToken: string, refreshToken?: string) => {
-    localStorage.setItem('nulltor_token', accessToken);
-    if (refreshToken) localStorage.setItem('nulltor_refresh_token', refreshToken);
+  hydrateTokens: (accessToken: string) => {
+    try {
+      localStorage.removeItem('nulltor_token');
+      localStorage.removeItem('nulltor_refresh_token');
+    } catch {}
     set({ token: accessToken, isAuthenticated: true });
   },
 
   login: async (email, password) => {
     const data = await authApi.login(email, password);
-    localStorage.setItem('nulltor_token', data.access_token);
-    if (data.refresh_token) {
-      localStorage.setItem('nulltor_refresh_token', data.refresh_token);
-    }
+    try {
+      localStorage.removeItem('nulltor_token');
+      localStorage.removeItem('nulltor_refresh_token');
+    } catch {}
     localStorage.setItem('nulltor_user', JSON.stringify(data.user));
     set({ token: data.access_token, user: data.user, isAuthenticated: true });
     return data.user;
   },
 
   logout: () => {
-    localStorage.removeItem('nulltor_token');
-    localStorage.removeItem('nulltor_refresh_token');
-    localStorage.removeItem('nulltor_user');
+    authApi.logout().catch(() => {});
+    try {
+      localStorage.removeItem('nulltor_token');
+      localStorage.removeItem('nulltor_refresh_token');
+      localStorage.removeItem('nulltor_user');
+    } catch {}
     sessionStorage.clear(); // Ensure E2EE keys don't leak between users on same tab
     set({ token: null, user: null, isAuthenticated: false });
   },

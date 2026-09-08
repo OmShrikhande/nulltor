@@ -2,7 +2,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, cast, String
 
 from core.database import get_db
 from core.deps import get_current_user
@@ -23,6 +23,7 @@ async def list_logs(
     actor_id: Optional[UUID] = None,
     action: Optional[AuditAction] = None,
     resource_type: Optional[ResourceType] = None,
+    search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -45,6 +46,17 @@ async def list_logs(
         q = q.where(AuditLog.action == action)
     if resource_type:
         q = q.where(AuditLog.resource_type == resource_type)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        q = q.where(
+            or_(
+                User.username.ilike(term),
+                cast(AuditLog.action, String).ilike(term),
+                cast(AuditLog.ip_address, String).ilike(term),
+                cast(AuditLog.resource_type, String).ilike(term),
+                cast(AuditLog.detail, String).ilike(term),
+            )
+        )
 
     total_result = await db.execute(select(func.count()).select_from(q.subquery()))
     total = total_result.scalar_one()

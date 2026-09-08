@@ -42,7 +42,8 @@ export interface BranchCompareResponse {
 
 export interface BranchSyncPayload {
   source_branch_id: string;
-  file_id?: string;
+  file_id?: string | null;
+  active_file_id?: string | null;
   custom_snapshot?: string;
   sync_message?: string;
 }
@@ -51,7 +52,9 @@ export interface BranchSyncResult {
   status: string;
   message: string;
   target_file_id: string | null;
+  active_file_id?: string | null;
   snapshot: string | null;
+  synced_files_count?: number;
 }
 
 export const branchesApi = {

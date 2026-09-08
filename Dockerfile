@@ -35,8 +35,10 @@ RUN npm install --omit=dev
 # Copy backend code
 COPY backend/ ./backend/
 
-# Copy root gateway, startup scripts, and files
-COPY index.js run_backend.js schema.sql ./
+# Copy root gateway, scripts, database schemas, and files
+COPY index.js ./
+COPY scripts/ ./scripts/
+COPY database/ ./database/
 
 # Copy built React UI from builder stage
 COPY --from=frontend-builder /app/public_react ./public_react

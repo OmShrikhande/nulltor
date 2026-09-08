@@ -10,6 +10,9 @@ from .commits import router as commits_router
 from .terminal import router as terminal_router
 from .ai import router as ai_router
 from .tools import router as tools_router
+from .webrtc import router as webrtc_router
+from .lsp import router as lsp_router
+from .extensions import router as extensions_router
 
 __all__ = [
     "auth_router",
@@ -24,4 +27,7 @@ __all__ = [
     "terminal_router",
     "ai_router",
     "tools_router",
+    "webrtc_router",
+    "lsp_router",
+    "extensions_router",
 ]

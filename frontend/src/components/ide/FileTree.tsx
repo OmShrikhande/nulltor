@@ -44,52 +44,87 @@ function getAllFolders(nodes: DirectoryNode[], parentPath = ''): FolderOption[] 
 }
 
 // ─── VS Code Style File Type Icon Resolver ─────────────────────────────────
-function getVSCodeFileIcon(fileName: string, isDir: boolean, isOpen: boolean) {
+export function getVSCodeFileIcon(fileName: string, isDir: boolean = false, isOpen: boolean = false, size: number = 15) {
   if (isDir) {
     return (
       <span style={{ color: '#dcb67a', display: 'inline-flex', alignItems: 'center' }}>
-        {isOpen ? <FolderOpen size={15} fill="#dcb67a" /> : <Folder size={15} fill="#dcb67a" />}
+        {isOpen ? <FolderOpen size={size} fill="#dcb67a" /> : <Folder size={size} fill="#dcb67a" />}
       </span>
     );
   }
   const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
   switch (ext) {
+    case 'c':
+    case 'h':
+      return (
+        <svg viewBox="0 0 128 128" width={size} height={size} fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="64" cy="64" r="60" fill="#659AD2" fillOpacity="0.15" />
+          <path fill="#659AD2" d="M96 86c-7.2 9.5-18.7 15.6-31.8 15.6-22.1 0-40-17.9-40-40s17.9-40 40-40c13.1 0 24.6 6.1 31.8 15.6l-13.6 8.5C78.4 39.9 71.7 36 64.2 36 49.3 36 37.2 48.1 37.2 63s12.1 27 27 27c7.5 0 14.2-3.9 18.2-9.7L96 86z" />
+        </svg>
+      );
+    case 'cpp':
+    case 'cc':
+    case 'cxx':
+    case 'hpp':
+      return (
+        <svg viewBox="0 0 128 128" width={size} height={size} fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="64" cy="64" r="60" fill="#00599C" fillOpacity="0.15" />
+          <path fill="#00599C" d="M80 82c-5.5 7.5-14.3 12.4-24.3 12.4-16.9 0-30.6-13.7-30.6-30.6S38.8 33.2 55.7 33.2c10 0 18.8 4.9 24.3 12.4l-10.4 6.5C66.1 47.7 61 44.7 55.7 44.7c-10.5 0-19.1 8.6-19.1 19.1s8.6 19.1 19.1 19.1c5.3 0 10.4-3 13.9-7.4L80 82z" />
+          <path fill="#00599C" d="M84 57h5v5h5v4h-5v5h-5v-5h-5v-4h5v-5zm18 0h5v5h5v4h-5v5h-5v-5h-5v-4h5v-5z" />
+        </svg>
+      );
+    case 'go':
+      return (
+        <svg viewBox="0 0 128 128" width={size} height={size} fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="64" cy="64" r="60" fill="#00ADD8" fillOpacity="0.15" />
+          <path fill="#00ADD8" d="M22 51.5c-4.8 0-8.7 3.9-8.7 8.7v8.8c0 4.8 3.9 8.7 8.7 8.7h13.4c4.8 0 8.7-3.9 8.7-8.7V65H32.5v5.3h9.3c-.6 2.2-2.6 3.7-4.9 3.7H22c-2.8 0-5.1-2.3-5.1-5.1v-8.8c0-2.8 2.3-5.1 5.1-5.1h13.4c2.3 0 4.3 1.6 4.9 3.7h5.5c-.7-5.1-4.9-9-10.4-9H22z" />
+          <path fill="#00ADD8" d="M72.5 51.5c-9.3 0-16.8 7.5-16.8 16.8s7.5 16.8 16.8 16.8 16.8-7.5 16.8-16.8-7.5-16.8-16.8-16.8zm0 28.1c-6.3 0-11.3-5.1-11.3-11.3s5.1-11.3 11.3-11.3 11.3 5.1 11.3 11.3-5.1 11.3-11.3 11.3z" />
+        </svg>
+      );
+    case 'rs':
+    case 'rust':
+      return (
+        <svg viewBox="0 0 128 128" width={size} height={size} fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="64" cy="64" r="60" fill="#DEA584" fillOpacity="0.15" />
+          <path fill="#DEA584" d="M64 24c-22.1 0-40 17.9-40 40s17.9 40 40 40 40-17.9 40-40-17.9-40-40-40zm-15 22h19c9 0 15 5 15 13 0 6-3.8 10.4-9.5 12l10.5 19H72l-9.5-17.5H57V89H49V46zm8 20h11c4.5 0 7-2.5 7-6.5s-2.5-6.5-7-6.5H57V66z" />
+        </svg>
+      );
     case 'js':
     case 'jsx':
-      return <span style={{ color: '#f7df1e' }}><FileCode2 size={15} /></span>;
+      return <span style={{ color: '#f7df1e', display: 'inline-flex' }}><FileCode2 size={size} /></span>;
     case 'ts':
     case 'tsx':
-      return <span style={{ color: '#3178c6' }}><FileCode2 size={15} /></span>;
+      return <span style={{ color: '#3178c6', display: 'inline-flex' }}><FileCode2 size={size} /></span>;
     case 'json':
-      return <span style={{ color: '#fbbf24' }}><FileJson size={15} /></span>;
+      return <span style={{ color: '#fbbf24', display: 'inline-flex' }}><FileJson size={size} /></span>;
     case 'html':
-      return <span style={{ color: '#ea580c' }}><Code2 size={15} /></span>;
+      return <span style={{ color: '#ea580c', display: 'inline-flex' }}><Code2 size={size} /></span>;
     case 'css':
     case 'scss':
-      return <span style={{ color: '#38bdf8' }}><FileCode2 size={15} /></span>;
+      return <span style={{ color: '#38bdf8', display: 'inline-flex' }}><FileCode2 size={size} /></span>;
     case 'py':
       return (
-        <svg viewBox="0 0 128 128" width="15" height="15" fill="none">
+        <svg viewBox="0 0 128 128" width={size} height={size} fill="none" style={{ flexShrink: 0 }}>
           <path fill="#3776AB" d="M64.66 11.23C32.17 11.23 27 25.1 27 25.1v17.5h38.25v5.33H19.7c-21.75 0-22.37 32-15 45.47 4.12 7.42 16.27 10.9 16.27 10.9v-15.6s.1-12.7 12.82-12.7h29c13.76 0 14.54-9.33 14.54-9.33v-38c0-12.8-13.6-17.44-32.67-17.44zm-14 10.45c4 0 7.25 3.2 7.25 7.1s-3.26 7.1-7.25 7.1c-4.02 0-7.27-3.2-7.27-7.1 0-3.9 3.25-7.1 7.27-7.1z" />
           <path fill="#FFD43B" d="M63.34 116.77c32.5 0 37.67-13.87 37.67-13.87v-17.5H62.75v-5.33h45.6c21.75 0 22.37-32 15-45.47-4.13-7.42-16.28-10.9-16.28-10.9v15.6s-.1 12.7-12.83 12.7h-29c-13.76 0-14.54 9.33-14.54 9.33v38c0 12.8 13.6 17.44 32.67 17.44zm14-10.45c-4 0-7.25-3.2-7.25-7.1s3.26-7.1 7.25-7.1c4.02 0 7.27-3.2 7.27-7.1 0-3.9 3.25-7.1 7.27-7.1z" />
         </svg>
       );
     case 'md':
-      return <span style={{ color: '#818cf8' }}><FileText size={15} /></span>;
+      return <span style={{ color: '#818cf8', display: 'inline-flex' }}><FileText size={size} /></span>;
     case 'svg':
     case 'png':
     case 'jpg':
     case 'jpeg':
-      return <span style={{ color: '#c084fc' }}><ImageIcon size={15} /></span>;
+      return <span style={{ color: '#c084fc', display: 'inline-flex' }}><ImageIcon size={size} /></span>;
     case 'sql':
-      return <span style={{ color: '#f59e0b' }}><Database size={15} /></span>;
+      return <span style={{ color: '#f59e0b', display: 'inline-flex' }}><Database size={size} /></span>;
     case 'csv':
-      return <span style={{ color: '#10b981' }}><FileSpreadsheet size={15} /></span>;
+      return <span style={{ color: '#10b981', display: 'inline-flex' }}><FileSpreadsheet size={size} /></span>;
     case 'sh':
     case 'bat':
-      return <span style={{ color: '#a855f7' }}><Terminal size={15} /></span>;
+      return <span style={{ color: '#a855f7', display: 'inline-flex' }}><Terminal size={size} /></span>;
     default:
-      return <span style={{ color: 'var(--text-muted)' }}><File size={15} /></span>;
+      return <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}><File size={size} /></span>;
   }
 }
 
@@ -446,13 +481,12 @@ function TreeNodeRow({
           gap: '6px',
           fontSize: '12.5px',
           cursor: 'pointer',
-          borderRadius: 'var(--radius-xs)',
+          borderRadius: '4px',
           margin: '1px 4px',
           position: 'relative',
-          background: isSelected ? 'rgba(1, 239, 172, 0.12)' : (isHovered ? 'var(--bg-2)' : 'transparent'),
-          borderLeft: isSelected ? '3px solid var(--aurora-mint)' : '3px solid transparent',
-          color: isSelected ? 'var(--aurora-mint)' : 'var(--text-primary)',
-          fontWeight: isSelected ? 700 : 400,
+          background: isSelected ? 'var(--tree-selected-bg, rgba(255, 255, 255, 0.08))' : (isHovered ? 'var(--tree-hover-bg, rgba(255, 255, 255, 0.04))' : 'transparent'),
+          color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+          fontWeight: isSelected ? 600 : 400,
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}

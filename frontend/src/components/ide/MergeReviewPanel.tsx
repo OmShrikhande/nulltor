@@ -227,10 +227,11 @@ function MergeCard({
   onReviewCode: (mr: MergeRequestRead) => void;
   actionLoading: string | null;
 }) {
-  const detail = mr.detail as Record<string, string>;
+  const detail = mr.detail as Record<string, any>;
+  const isRoomMerge = mr.file_id === '__all__' || Boolean(detail.is_room_merge);
   const sourceName = detail.source_branch_name ?? branchMap[mr.source_branch_id] ?? mr.source_branch_id.slice(0, 8);
   const targetName = detail.target_branch_name ?? branchMap[mr.target_branch_id] ?? mr.target_branch_id.slice(0, 8);
-  const fileName = detail.file_name ?? mr.file_id.slice(0, 12);
+  const fileName = isRoomMerge ? 'Entire Workspace / All Files' : (detail.file_name ?? mr.file_id.slice(0, 12));
   const prTitle = detail.pr_title ?? fileName;
   const prDescription = detail.pr_description ?? '';
 
@@ -256,7 +257,7 @@ function MergeCard({
       {expanded && (
         <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg-0)' }}>
           {prDescription && (
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 6, borderLeft: '3px solid var(--aurora-blue)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 6, borderLeft: '3px solid #2563eb' }}>
               {prDescription}
             </div>
           )}
@@ -274,7 +275,7 @@ function MergeCard({
                   disabled={actionLoading === mr.id + 'confirm'}
                 >
                   <GitMerge size={14} />
-                  {actionLoading === mr.id + 'confirm' ? 'Merging…' : 'Confirm & Merge'}
+                  {actionLoading === mr.id + 'confirm' ? 'Merging…' : (isRoomMerge ? 'Confirm & Merge Room' : 'Confirm & Merge')}
                 </button>
                 <button
                   className="btn btn-sm"
@@ -286,15 +287,17 @@ function MergeCard({
                 </button>
               </div>
 
-              <button
-                className="btn btn-sm btn-full"
-                style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontWeight: 600 }}
-                onClick={() => onReviewCode(mr)}
-                disabled={actionLoading === mr.id + 'diff'}
-              >
-                <FileCode2 size={13} style={{ marginRight: 6 }} /> 
-                {actionLoading === mr.id + 'diff' ? 'Loading Diff...' : 'Review Code Diff'}
-              </button>
+              {!isRoomMerge && (
+                <button
+                  className="btn btn-sm btn-full"
+                  style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontWeight: 600 }}
+                  onClick={() => onReviewCode(mr)}
+                  disabled={actionLoading === mr.id + 'diff'}
+                >
+                  <FileCode2 size={13} style={{ marginRight: 6 }} /> 
+                  {actionLoading === mr.id + 'diff' ? 'Loading Diff...' : 'Review Code Diff'}
+                </button>
+              )}
             </div>
           )}
 

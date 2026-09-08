@@ -177,8 +177,10 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && open()}
         style={{
-          background: '#15161a',
-          border: '1px solid #22242c',
+          background: 'var(--bg-1)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid var(--border)',
           borderRadius: '12px',
           padding: '16px 18px',
           cursor: 'pointer',
@@ -192,7 +194,7 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
       >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span style={{ fontWeight: 800, fontSize: '15px', color: '#f8fafc', letterSpacing: '-0.01em' }}>
+            <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
               {project.name}
             </span>
             <div onClick={(e) => e.stopPropagation()}>
@@ -200,7 +202,7 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
                 style={{
                   fontSize: '11px',
                   fontWeight: 600,
-                  color: status === 'live' ? '#10b981' : status === 'offline' ? '#94a3b8' : '#38bdf8',
+                  color: status === 'live' ? '#10b981' : status === 'offline' ? 'var(--text-muted)' : '#38bdf8',
                   background: status === 'live' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.05)',
                   padding: '2px 8px',
                   borderRadius: '10px'
@@ -211,19 +213,19 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
             </div>
           </div>
 
-          <div style={{ fontSize: '12.5px', color: '#94a3b8', lineHeight: '1.45', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.45', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {project.description || 'No description provided'}
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', marginTop: '12px', borderTop: '1px solid #22242c', fontSize: '12px', color: '#94a3b8' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', marginTop: '12px', borderTop: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-secondary)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <GitBranch size={13} /> {branchCount} branch{branchCount !== 1 ? 'es' : ''}
             </span>
             <button
               className="btn btn-ghost btn-sm"
-              style={{ padding: '2px 6px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px', color: '#cbd5e1' }}
+              style={{ padding: '2px 6px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}
               onClick={(e) => { e.stopPropagation(); setShowMembers(true); }}
             >
               <Users size={12} /> Members
@@ -234,7 +236,7 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
             <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
               <button
                 className="btn-icon"
-                style={{ width: '24px', height: '24px', color: '#94a3b8' }}
+                style={{ width: '24px', height: '24px', color: 'var(--text-muted)' }}
                 onClick={() => setShowMenu(!showMenu)}
                 title="More actions"
               >
@@ -248,11 +250,11 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
                     bottom: '100%',
                     right: 0,
                     marginBottom: '6px',
-                    background: '#18191e',
-                    border: '1px solid #2a2d36',
+                    background: 'var(--bg-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     padding: '4px',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                    boxShadow: 'var(--shadow-lg)',
                     zIndex: 50,
                     minWidth: '155px',
                     display: 'flex',

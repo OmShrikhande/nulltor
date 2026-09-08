@@ -14,7 +14,23 @@ from models.audit_log import AuditAction, ResourceType
 from schemas.directory import DirectoryCreate, DirectoryRead, DirectoryUpdate, DirectoryTreeNode
 from services.audit_service import log_action
 
+from core.agent_security import is_sensitive_file
+
 router = APIRouter()
+
+
+def _validate_node_name(name: str) -> str:
+    cleaned = name.strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Node name cannot be empty or whitespace only")
+    if "\0" in cleaned or "/" in cleaned or "\\" in cleaned:
+        raise HTTPException(status_code=400, detail="Node name cannot contain slashes or null characters")
+    if cleaned in (".", "..") or cleaned.startswith("../") or cleaned.startswith("..\\"):
+        raise HTTPException(status_code=400, detail="Invalid path traversal sequence in node name")
+    if is_sensitive_file(cleaned):
+        raise HTTPException(status_code=403, detail=f"Cannot create or rename to sensitive file name '{cleaned}'")
+    return cleaned
+
 
 
 async def _get_project_and_access(db: AsyncSession, project_id: UUID, user: User) -> tuple[Project, Optional[Membership]]:
@@ -156,10 +172,12 @@ async def create_node(
         if parent.type.value != "dir":
             raise HTTPException(status_code=400, detail="Parent must be a directory, not a file")
 
+    cleaned_name = _validate_node_name(payload.name)
+
     node = Directory(
         project_id=project_id,
         parent_id=payload.parent_id,
-        name=payload.name,
+        name=cleaned_name,
         type=payload.type,
         branch_id=branch_id,
         created_by=user.id,
@@ -202,9 +220,11 @@ async def update_node(
         raise HTTPException(status_code=404, detail="Node not found")
 
     changes: dict = {}
-    if payload.name is not None and payload.name != node.name:
-        changes["name"] = {"from": node.name, "to": payload.name}
-        node.name = payload.name
+    if payload.name is not None:
+        cleaned_name = _validate_node_name(payload.name)
+        if cleaned_name != node.name:
+            changes["name"] = {"from": node.name, "to": cleaned_name}
+            node.name = cleaned_name
     if payload.parent_id is not None and payload.parent_id != node.parent_id:
         changes["parent_id"] = {"from": str(node.parent_id), "to": str(payload.parent_id)}
         node.parent_id = payload.parent_id

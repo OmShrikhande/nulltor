@@ -19,9 +19,9 @@ const BRANCH_ICONS: Record<BranchType, React.ReactNode> = {
 };
 
 const BRANCH_COLORS: Record<BranchType, { bg: string; text: string; border: string }> = {
-  main: { bg: 'rgba(1, 239, 172, 0.12)', text: '#01efac', border: 'rgba(1, 239, 172, 0.3)' },
-  subroom: { bg: 'rgba(56, 189, 248, 0.12)', text: '#38bdf8', border: 'rgba(56, 189, 248, 0.3)' },
-  private: { bg: 'rgba(192, 132, 252, 0.12)', text: '#c084fc', border: 'rgba(192, 132, 252, 0.3)' },
+  main: { bg: 'var(--branch-main-bg)', text: 'var(--branch-main-text)', border: 'var(--branch-main-border)' },
+  subroom: { bg: 'var(--branch-sub-bg)', text: 'var(--branch-sub-text)', border: 'var(--branch-sub-border)' },
+  private: { bg: 'var(--branch-priv-bg)', text: 'var(--branch-priv-text)', border: 'var(--branch-priv-border)' },
 };
 
 const BRANCH_LABELS: Record<BranchType, string> = {
@@ -82,13 +82,13 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
         <span style={{ display: 'flex', alignItems: 'center' }}>
           {BRANCH_ICONS[branchType]}
         </span>
-        <span style={{ textTransform: 'uppercase', fontSize: '10px', letterSpacing: '0.04em', opacity: 0.8 }}>
+        <span style={{ textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.04em', fontWeight: 700 }}>
           {BRANCH_LABELS[branchType]}:
         </span>
-        <span style={{ fontWeight: 800, color: '#ffffff', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 800, color: 'var(--text-primary)', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {currentBranch?.name || 'main'}
         </span>
-        <ChevronDown size={13} style={{ opacity: 0.7, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+        <ChevronDown size={13} style={{ opacity: 0.8, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
       </button>
 
       {/* Floating Popover Dropdown */}
@@ -99,18 +99,18 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
             top: 'calc(100% + 6px)',
             left: 0,
             width: '280px',
-            background: 'var(--bg-1)',
+            background: 'var(--bg-popover)',
             border: '1px solid var(--border)',
             borderRadius: '10px',
-            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--border)',
             zIndex: 999,
             overflow: 'hidden',
             animation: 'fadeIn 0.15s ease',
           }}
         >
           {/* Header & Search */}
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-0)', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-popover)', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
               <Search size={13} style={{ color: 'var(--text-muted)' }} />
               <input
                 type="text"
@@ -131,7 +131,7 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
           </div>
 
           {/* Subroom List */}
-          <div style={{ maxHeight: '220px', overflowY: 'auto', padding: '4px' }}>
+          <div style={{ maxHeight: '220px', overflowY: 'auto', padding: '4px', background: 'var(--bg-popover)' }}>
             {filteredBranches.length === 0 ? (
               <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
                 No subrooms found.
@@ -154,11 +154,12 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
                       padding: '8px 10px',
                       borderRadius: '6px',
                       cursor: 'pointer',
-                      background: isSelected ? 'rgba(1, 239, 172, 0.08)' : 'transparent',
+                      background: isSelected ? 'var(--bg-surface)' : 'transparent',
+                      border: isSelected ? `1px solid ${bStyle.border}` : '1px solid transparent',
                       transition: 'background 0.1s ease',
                     }}
                     onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'var(--bg-2)';
+                      if (!isSelected) e.currentTarget.style.background = 'var(--bg-surface)';
                     }}
                     onMouseLeave={(e) => {
                       if (!isSelected) e.currentTarget.style.background = 'transparent';
@@ -169,7 +170,7 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
                         {BRANCH_ICONS[b.type]}
                       </span>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '12.5px', fontWeight: isSelected ? 700 : 500, color: isSelected ? '#01efac' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: isSelected ? 700 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {b.name}
                         </div>
                         <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -179,7 +180,7 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
                     </div>
 
                     {isSelected && (
-                      <Check size={14} style={{ color: '#01efac', flexShrink: 0 }} />
+                      <Check size={14} style={{ color: bStyle.text, flexShrink: 0 }} />
                     )}
                   </div>
                 );
@@ -188,7 +189,7 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
           </div>
 
           {/* Footer Action */}
-          <div style={{ padding: '8px', borderTop: '1px solid var(--border)', background: 'var(--bg-0)' }}>
+          <div style={{ padding: '8px', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
             <button
               className="btn btn-sm"
               onClick={() => {
@@ -201,13 +202,14 @@ export function BranchSelector({ branches, currentBranch, projectId, onBranchCha
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '6px',
-                background: 'rgba(1, 239, 172, 0.12)',
-                border: '1px solid rgba(1, 239, 172, 0.3)',
-                color: '#01efac',
+                background: 'var(--bg-popover)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-primary)',
                 fontWeight: 700,
                 fontSize: '11.5px',
                 padding: '6px 12px',
                 borderRadius: '6px',
+                cursor: 'pointer',
               }}
             >
               <Plus size={13} /> Create Subroom
@@ -280,9 +282,9 @@ export function CreateBranchModal({
           <button
             className="btn"
             style={{
-              background: 'rgba(13, 148, 136, 0.15)',
-              border: '1px solid #0d9488',
-              color: '#14b8a6',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
               fontWeight: 600,
             }}
             onClick={onClose}
@@ -300,7 +302,7 @@ export function CreateBranchModal({
       }
     >
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>Subroom Identifier / Name</label>
+        <label style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Subroom Identifier / Name</label>
         <input
           type="text"
           value={name}
@@ -312,7 +314,7 @@ export function CreateBranchModal({
       </div>
 
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>Subroom Architecture Type</label>
+        <label style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Subroom Architecture Type</label>
         <select value={type} onChange={(e) => setType(e.target.value as BranchType)}>
           <option value="subroom">Parallel Subroom — Multi-developer collaborative branch</option>
           <option value="private">Private Subroom — Zero-Knowledge isolated personal room</option>
@@ -320,7 +322,7 @@ export function CreateBranchModal({
       </div>
 
       <div className="form-field">
-        <label style={{ color: '#0d9488', fontWeight: 700 }}>Base Parent Subroom</label>
+        <label style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Base Parent Subroom</label>
         <select value={parentId} onChange={(e) => setParentId(e.target.value)}>
           {branches.map((b) => (
             <option key={b.id} value={b.id}>

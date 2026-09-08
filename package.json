@@ -1,20 +1,21 @@
 {
-  "name": "offline_notepad",
-  "version": "1.0.0",
-  "description": "",
+  "name": "nulltor",
+  "version": "2.1.0",
+  "description": "Cryptographic Collaborative Developer Studio & Real-Time IDE",
   "main": "index.js",
   "scripts": {
     "build": "cd frontend && npm run build",
-    "backend": "node run_backend.js",
+    "backend": "node scripts/run_backend.js",
     "gateway": "node index.js",
-    "start": "concurrently -n \"FASTAPI,GATEWAY\" -c \"cyan,magenta\" \"node run_backend.js\" \"node index.js\"",
+    "start": "concurrently -n \"FASTAPI,GATEWAY\" -c \"cyan,magenta\" \"node scripts/run_backend.js\" \"node index.js\"",
     "dev:frontend": "cd frontend && npm run dev",
-    "dev": "concurrently -n \"BACKEND,GATEWAY,VITE\" -c \"cyan,magenta,green\" \"node run_backend.js\" \"nodemon index.js\" \"cd frontend && npm run dev\"",
+    "dev": "concurrently -n \"BACKEND,GATEWAY,VITE\" -c \"cyan,magenta,green\" \"node scripts/run_backend.js\" \"nodemon index.js\" \"cd frontend && npm run dev\"",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up --build",
-    "stop": "node stop.js",
-    "setup": "node setup.js"
+    "stop": "node scripts/stop.js",
+    "setup": "node scripts/setup.js",
+    "test:e2e": "playwright test"
   },
   "keywords": [],
   "author": "",
@@ -36,5 +37,8 @@
     "socket.io": "^4.8.3",
     "sqlite3": "^6.0.1",
     "yjs": "^13.6.31"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

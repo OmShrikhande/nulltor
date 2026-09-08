@@ -3,7 +3,7 @@ import hashlib
 from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
@@ -144,6 +144,23 @@ async def create_commit(
     )
     db.add(file_delta)
 
+    # If workspace-level commit, record deltas for each tracked workspace file
+    if payload.file_id == "__all__" and payload.tree_manifest:
+        for file_path, f_id in payload.tree_manifest.items():
+            if str(f_id) != payload.file_id:
+                extra_delta = CommitFileDelta(
+                    commit_id=commit_v2.id,
+                    file_id=str(f_id),
+                    file_path=str(file_path),
+                    change_type="modified",
+                    blob_hash=None,
+                    encrypted_patch=None,
+                    parent_delta_id=None,
+                    is_keyframe=True,
+                    chain_depth=0,
+                )
+                db.add(extra_delta)
+
     # 3. Maintain legacy Commit row for backward compatibility
     legacy_commit = Commit(
         id=commit_v2.id,
@@ -200,8 +217,8 @@ async def get_blob(
 @router.get("", response_model=List[CommitResponse])
 async def get_commits(
     project_id: uuid.UUID,
-    file_id: str,
-    branch_id: str | None = None,
+    file_id: Optional[str] = None,
+    branch_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -209,49 +226,63 @@ async def get_commits(
     if not res.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Not a member of this project")
 
-    # 1. Parse file_id safely
-    from models.directory import Directory
-    file_uuid = None
-    try:
-        file_uuid = uuid.UUID(file_id)
-    except Exception:
-        pass
-
-    file_node = None
-    if file_uuid:
-        file_node_res = await db.execute(select(Directory).where(Directory.id == file_uuid))
-        file_node = file_node_res.scalar_one_or_none()
-
-    related_file_ids = [file_id]
-    if file_node:
-        # Get all file_ids in this project with the exact same name
-        related_files_res = await db.execute(
-            select(Directory.id).where(
-                Directory.project_id == project_id,
-                Directory.name == file_node.name,
-                Directory.type == file_node.type
-            )
-        )
-        related_file_ids.extend([str(f_id) for f_id in related_files_res.scalars().all()])
-    
-    related_file_ids = list(set(related_file_ids))
-
-    # 2. Fetch commits joining commit_file_deltas for hybrid delta metadata
     stmt = (
-        select(Commit, User.username, CommitFileDelta)
+        select(Commit, User.username, CommitFileDelta, CommitV2.tree_manifest)
         .outerjoin(User, Commit.user_id == User.id)
         .outerjoin(CommitFileDelta, Commit.id == CommitFileDelta.commit_id)
-        .where(
-            Commit.project_id == project_id,
-            Commit.file_id.in_(related_file_ids)
-        )
-        .order_by(Commit.created_at.desc())
+        .outerjoin(CommitV2, Commit.id == CommitV2.id)
+        .where(Commit.project_id == project_id)
     )
+
+    if branch_id:
+        try:
+            b_uuid = uuid.UUID(branch_id)
+            stmt = stmt.where(Commit.branch_id == b_uuid)
+        except Exception:
+            pass
+
+    if file_id and file_id != '__all__':
+        from models.directory import Directory
+        file_uuid = None
+        try:
+            file_uuid = uuid.UUID(file_id)
+        except Exception:
+            pass
+
+        file_node = None
+        if file_uuid:
+            file_node_res = await db.execute(select(Directory).where(Directory.id == file_uuid))
+            file_node = file_node_res.scalar_one_or_none()
+
+        related_file_ids = [file_id]
+        if file_node:
+            related_files_res = await db.execute(
+                select(Directory.id).where(
+                    Directory.project_id == project_id,
+                    Directory.name == file_node.name,
+                    Directory.type == file_node.type
+                )
+            )
+            related_file_ids.extend([str(f_id) for f_id in related_files_res.scalars().all()])
+
+        related_file_ids = list(set(related_file_ids))
+        stmt = stmt.where(
+            or_(
+                Commit.file_id.in_(related_file_ids),
+                and_(Commit.file_id == '__all__', CommitFileDelta.file_id.in_(related_file_ids)),
+            )
+        )
+
+    stmt = stmt.order_by(Commit.created_at.desc())
     res = await db.execute(stmt)
     rows = res.all()
 
     result = []
-    for commit, username, delta in rows:
+    seen_commits = set()
+    for commit, username, delta, tree_manifest in rows:
+        if commit.id in seen_commits:
+            continue
+        seen_commits.add(commit.id)
         commit_dict = {
             "id": commit.id,
             "project_id": commit.project_id,
@@ -267,7 +298,7 @@ async def get_commits(
             "parent_delta_id": delta.parent_delta_id if delta else None,
             "is_keyframe": delta.is_keyframe if delta else True,
             "chain_depth": delta.chain_depth if delta else 0,
-            "tree_manifest": None,
+            "tree_manifest": tree_manifest,
         }
         result.append(commit_dict)
 

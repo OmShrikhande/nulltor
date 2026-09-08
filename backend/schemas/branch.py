@@ -57,6 +57,7 @@ class BranchMemberRead(BaseModel):
 class BranchSyncPayload(BaseModel):
     source_branch_id: uuid.UUID
     file_id: Optional[str] = None
+    active_file_id: Optional[str] = None
     custom_snapshot: Optional[str] = None
     sync_message: Optional[str] = None
 

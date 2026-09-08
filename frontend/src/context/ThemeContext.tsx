@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react';
 
 export type Theme = 'dark' | 'light';
 
@@ -19,17 +19,50 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return 'dark'; // default to enterprise dark mode
   });
 
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyThemeWithTransition = (newTheme: Theme) => {
+    if (!document.documentElement) return;
+
+    const commitTheme = () => {
+      document.documentElement.classList.add('theme-transitioning');
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem(LOCAL_STORAGE_KEY, newTheme);
+      setThemeState(newTheme);
+
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current);
+      }
+
+      transitionTimerRef.current = setTimeout(() => {
+        document.documentElement.classList.remove('theme-transitioning');
+      }, 500);
+    };
+
+    if ('startViewTransition' in document && typeof (document as any).startViewTransition === 'function') {
+      try {
+        (document as any).startViewTransition(() => {
+          commitTheme();
+        });
+        return;
+      } catch {
+        // Fall back to standard CSS class transition
+      }
+    }
+
+    commitTheme();
+  };
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem(LOCAL_STORAGE_KEY, theme);
-  }, [theme]);
+  }, []);
 
   const toggleTheme = () => {
-    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    applyThemeWithTransition(theme === 'dark' ? 'light' : 'dark');
   };
 
   const setTheme = (t: Theme) => {
-    setThemeState(t);
+    applyThemeWithTransition(t);
   };
 
   return (

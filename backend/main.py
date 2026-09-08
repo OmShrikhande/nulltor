@@ -37,6 +37,9 @@ from routers import (
     terminal_router,
     ai_router,
     tools_router,
+    webrtc_router,
+    lsp_router,
+    extensions_router,
 )
 from services.audit_service import log_action
 
@@ -162,6 +165,9 @@ app.include_router(commits_router,     prefix="/api",                        tag
 app.include_router(logs_router,        prefix="/api/logs",                   tags=["Audit Logs"])
 app.include_router(ai_router,          prefix="/api/ai",                     tags=["AI Copilot"])
 app.include_router(tools_router,       prefix="/api",                        tags=["AI Tools"])
+app.include_router(lsp_router,         prefix="/api",                        tags=["LSP / Language Intelligence"])
+app.include_router(extensions_router,  prefix="/api",                        tags=["Extensions Marketplace"])
+app.include_router(webrtc_router,      prefix="/api/webrtc",                 tags=["WebRTC"])
 app.include_router(terminal_router,    tags=["Terminal"])
 
 

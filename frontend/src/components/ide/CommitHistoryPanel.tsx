@@ -37,7 +37,7 @@ export function CommitHistoryPanel({
   async function loadCommits() {
     setLoading(true);
     try {
-      const data = await commitsApi.getCommits(projectId, fileId);
+      const data = await commitsApi.getCommits(projectId, fileId, branchId);
       setCommits(data);
     } catch (e) {
       toast('Failed to load commit history', 'error');
@@ -125,11 +125,11 @@ export function CommitHistoryPanel({
         <DiffViewerModal
           fileName={fileName}
           title="Time Machine Revert"
-          subtitle="Current Code (Left) → Past Commit to Revert (Right)"
-          leftLabel="Current Working Code (Left)"
-          rightLabel="Past Commit Target (Right)"
-          originalSnapshotBase64={getCurrentSnapshot()}
-          modifiedSnapshotBase64={decryptSnapshot(diffCommit.snapshot || '')}
+          subtitle="Historical Commit (Left) → Current Working Code (Right)"
+          leftLabel={`Past Commit: ${new Date(diffCommit.created_at).toLocaleString()} (Left)`}
+          rightLabel="Current Working Code (Right)"
+          originalSnapshotBase64={decryptSnapshot(diffCommit.snapshot || '')}
+          modifiedSnapshotBase64={getCurrentSnapshot()}
           confirmLabel="Revert to this version"
           onClose={() => setDiffCommit(null)}
           onConfirm={() => {

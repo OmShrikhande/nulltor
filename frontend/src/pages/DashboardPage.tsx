@@ -4,13 +4,14 @@ import { projectsApi, type ProjectRead } from '../api/projects';
 import { branchesApi } from '../api/branches';
 import { logsApi, type AuditLogRead } from '../api/logs';
 import { usersApi } from '../api/users';
+import { commitsApi } from '../api/commits';
 import { type UserRead } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import { Sidebar } from '../components/shared/Sidebar';
 import { ProjectCard, CreateProjectModal } from '../components/dashboard/ProjectCard';
 import { JoinProjectModal } from '../components/dashboard/JoinProjectModal';
 import { toast } from '../components/shared/Toast';
-import { PlusCircle, FileText, Shield, User, Users, Folder, GitBranch, Trash2, Activity, Key } from 'lucide-react';
+import { PlusCircle, FileText, Shield, User, Users, Folder, GitBranch, Trash2, Activity, Key, GitCommit, UsersRound } from 'lucide-react';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -19,6 +20,9 @@ export function DashboardPage() {
   const [branchCounts, setBranchCounts] = useState<Record<string, number>>({});
   const [recentLogs, setRecentLogs] = useState<AuditLogRead[]>([]);
   const [systemUsers, setSystemUsers] = useState<UserRead[]>([]);
+  const [totalUsersCount, setTotalUsersCount] = useState<number>(1);
+  const [todayCommitsCount, setTodayCommitsCount] = useState<number>(0);
+  const [totalCommitsCount, setTotalCommitsCount] = useState<number>(0);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -32,6 +36,11 @@ export function DashboardPage() {
       setProjects(data.items);
 
       const counts: Record<string, number> = {};
+      let totalCommits = 0;
+      let todayCount = 0;
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
       await Promise.all(
         data.items.map(async (p) => {
           try {
@@ -40,9 +49,17 @@ export function DashboardPage() {
           } catch {
             counts[p.id] = 0;
           }
+
+          try {
+            const cList = await commitsApi.getCommits(p.id);
+            totalCommits += cList.length;
+            todayCount += cList.filter((c) => new Date(c.created_at) >= todayStart).length;
+          } catch {}
         })
       );
       setBranchCounts(counts);
+      setTodayCommitsCount(todayCount);
+      setTotalCommitsCount(totalCommits);
 
       try {
         const logData = await logsApi.list({ page: 1, page_size: 6 });
@@ -50,8 +67,9 @@ export function DashboardPage() {
       } catch {}
 
       try {
-        const userData = await usersApi.list(0, 5);
+        const userData = await usersApi.list(0, 50);
         setSystemUsers(userData.items);
+        setTotalUsersCount(userData.total || userData.items.length);
       } catch {}
 
     } catch {
@@ -87,10 +105,10 @@ export function DashboardPage() {
           {/* Professional Header & Actions Bar matching Mockup */}
           <div className="animate-fade-in-up stagger-1" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '16px', position: 'relative', zIndex: 10 }}>
             <div>
-              <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em', margin: 0 }}>
-                Hey, <span style={{ color: '#3b82f6' }}>{user?.username || 'superadmin'}</span>
+              <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>
+                Hey, <span style={{ color: 'var(--accent-secondary)' }}>{user?.username || 'superadmin'}</span>
               </h1>
-              <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px', margin: 0 }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px', margin: 0 }}>
                 {projects.length} active workspace{projects.length !== 1 ? 's' : ''}
               </p>
             </div>
@@ -106,10 +124,10 @@ export function DashboardPage() {
                     width: '100%',
                     padding: '8px 14px',
                     fontSize: '13px',
-                    background: '#15161a',
+                    background: 'var(--bg-2)',
                     borderRadius: '8px',
-                    border: '1px solid #22242c',
-                    color: '#f8fafc',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
                     outline: 'none',
                   }}
                 />
@@ -121,9 +139,9 @@ export function DashboardPage() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
-                  border: '1px solid #22242c',
-                  color: '#f8fafc',
-                  background: '#15161a',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  background: 'var(--bg-2)',
                   borderRadius: '8px',
                   padding: '8px 14px',
                   fontSize: '13px',
@@ -141,13 +159,14 @@ export function DashboardPage() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    background: '#ffffff',
-                    color: '#000000',
+                    background: 'var(--accent-primary)',
+                    color: '#ffffff',
                     fontWeight: 700,
                     border: 'none',
                     borderRadius: '8px',
                     padding: '8px 16px',
                     fontSize: '13px',
+                    boxShadow: '0 2px 8px var(--accent-glow)',
                   }}
                 >
                   <PlusCircle size={14} /> New project
@@ -158,45 +177,87 @@ export function DashboardPage() {
 
           {/* Top 3-Card Metrics Shelf */}
           <div className="animate-fade-in-up stagger-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px', position: 'relative', zIndex: 10 }}>
+            {/* Card 1: Workspaces & Branches */}
             <div style={{
-              background: '#15161a',
-              border: '1px solid #22242c',
+              background: 'var(--bg-1)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
             }}>
-              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 500 }}>
-                Storage used
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Active workspaces
+                </span>
+                <Folder size={15} style={{ color: 'var(--accent-secondary)', opacity: 0.8 }} />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginTop: '6px', letterSpacing: '-0.02em' }}>
-                2.4 GB
+              <div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', letterSpacing: '-0.02em' }}>
+                  {loading ? '…' : projects.length}
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {totalBranches} branch{totalBranches !== 1 ? 'es' : ''} across all projects
+                </div>
               </div>
             </div>
 
+            {/* Card 2: Team Members & Users */}
             <div style={{
-              background: '#15161a',
-              border: '1px solid #22242c',
+              background: 'var(--bg-1)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
             }}>
-              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 500 }}>
-                Active sessions
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Team members
+                </span>
+                <Users size={15} style={{ color: '#10b981', opacity: 0.8 }} />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginTop: '6px', letterSpacing: '-0.02em' }}>
-                {projects.length > 0 ? '3' : '1'}
+              <div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', letterSpacing: '-0.02em' }}>
+                  {loading ? '…' : totalUsersCount}
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {totalUsersCount === 1 ? '1 registered collaborator' : `${totalUsersCount} registered collaborators`}
+                </div>
               </div>
             </div>
 
+            {/* Card 3: Commits & Snapshots Today */}
             <div style={{
-              background: '#15161a',
-              border: '1px solid #22242c',
+              background: 'var(--bg-1)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
             }}>
-              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 500 }}>
-                Commits today
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Commits today
+                </span>
+                <GitCommit size={15} style={{ color: '#6366f1', opacity: 0.8 }} />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginTop: '6px', letterSpacing: '-0.02em' }}>
-                27
+              <div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', letterSpacing: '-0.02em' }}>
+                  {loading ? '…' : todayCommitsCount}
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {totalCommitsCount} total commit snapshot{totalCommitsCount !== 1 ? 's' : ''}
+                </div>
               </div>
             </div>
           </div>
@@ -211,14 +272,14 @@ export function DashboardPage() {
                 </div>
               ) : filteredProjects.length === 0 ? (
                 <div style={{
-                  background: '#15161a',
-                  border: '1px solid #22242c',
+                  background: 'var(--bg-1)',
+                  border: '1px solid var(--border)',
                   borderRadius: '12px',
                   padding: '36px',
                   textAlign: 'center'
                 }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px', color: '#f8fafc' }}>No Workspace Projects Found</h3>
-                  <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-primary)' }}>No Workspace Projects Found</h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
                     {canCreate ? 'Create your first project workspace to start collaborating.' : 'No projects assigned.'}
                   </p>
                   {canCreate && (
@@ -247,8 +308,10 @@ export function DashboardPage() {
             {/* Right 4 Cols: Semantic Activity Audit matching Mockup */}
             <div className="animate-fade-in-up stagger-4" style={{ gridColumn: 'span 4' }}>
               <div style={{
-                background: '#15161a',
-                border: '1px solid #22242c',
+                background: 'var(--bg-1)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '16px 20px',
                 height: '100%',
@@ -257,7 +320,7 @@ export function DashboardPage() {
                 minHeight: '220px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
                     Activity audit
                   </h2>
                   <span style={{ color: '#10b981', fontSize: '11.5px', fontWeight: 600 }}>
@@ -267,7 +330,7 @@ export function DashboardPage() {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, overflowY: 'auto' }}>
                   {recentLogs.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>No activity logged yet.</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No activity logged yet.</div>
                   ) : (
                     recentLogs.map((log) => {
                       const isDelete = log.action.toLowerCase().includes('delete') || log.action.toLowerCase().includes('remove');
@@ -277,8 +340,8 @@ export function DashboardPage() {
                       const actionLabel = log.action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                       const actorName = log.actor_username || (log.actor_id ? log.actor_id.slice(0, 8) : 'superadmin');
 
-                      const iconColor = isDelete ? '#ef4444' : isCreate ? '#10b981' : '#94a3b8';
-                      const textColor = isDelete ? '#f87171' : isCreate ? '#34d399' : '#f8fafc';
+                      const iconColor = isDelete ? '#ef4444' : isCreate ? '#10b981' : 'var(--text-muted)';
+                      const textColor = isDelete ? '#ef4444' : isCreate ? '#10b981' : 'var(--text-primary)';
 
                       return (
                         <div key={log.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
@@ -296,9 +359,9 @@ export function DashboardPage() {
                           </div>
                           <div>
                             <div style={{ fontSize: '13px', fontWeight: 600, color: textColor }}>
-                              {actionLabel} <span style={{ color: '#64748b', fontWeight: 400, fontSize: '11px' }}>· {timeStr}</span>
+                              {actionLabel} <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11px' }}>· {timeStr}</span>
                             </div>
-                            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '1px' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '1px' }}>
                               {actorName}
                             </div>
                           </div>

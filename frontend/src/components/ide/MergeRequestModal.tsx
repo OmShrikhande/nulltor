@@ -5,7 +5,7 @@ import { commitsApi, type CommitResponse } from '../../api/commits';
 import { Modal } from '../shared/Modal';
 import { toast } from '../shared/Toast';
 import { DiffViewerModal } from './DiffViewerModal';
-import { GitMerge, AlertTriangle, FileText, FileCode2, Clock, GitCommit } from 'lucide-react';
+import { GitMerge, AlertTriangle, FileText, FileCode2, Clock, GitCommit, Layers } from 'lucide-react';
 
 interface MergeRequestModalProps {
   projectId: string;
@@ -35,6 +35,7 @@ export function MergeRequestModal({
   const [targetBranchId, setTargetBranchId] = useState(
     targetBranches.find((b) => b.type === 'main')?.id ?? targetBranches[0]?.id ?? ''
   );
+  const [mergeScope, setMergeScope] = useState<'room' | 'file'>('room');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [prTitle, setPrTitle] = useState('');
@@ -67,8 +68,8 @@ export function MergeRequestModal({
   }, [projectId, targetBranchId, sourceBranch.id, currentFileId]);
 
   async function handleSubmit() {
-    if (!currentFileId) {
-      setError('Please open a file in the editor before initiating a merge request.');
+    if (mergeScope === 'file' && !currentFileId) {
+      setError('Please open a file in the editor or select "Entire Room".');
       return;
     }
     if (!targetBranchId) {
@@ -79,21 +80,25 @@ export function MergeRequestModal({
     setLoading(true);
     setError('');
     try {
-      const snapshot = getCurrentSnapshot();
+      const isRoomMerge = mergeScope === 'room';
+      const snapshot = isRoomMerge ? undefined : (getCurrentSnapshot() ?? undefined);
+      const targetBranchName = targetBranches.find((b) => b.id === targetBranchId)?.name ?? targetBranchId;
+
       await mergesApi.create(projectId, {
         source_branch_id: sourceBranch.id,
         target_branch_id: targetBranchId,
-        file_id: currentFileId,
-        pre_merge_snapshot: snapshot ?? undefined,
+        file_id: isRoomMerge ? '__all__' : currentFileId!,
+        pre_merge_snapshot: snapshot,
         detail: {
           source_branch_name: sourceBranch.name,
-          target_branch_name: targetBranches.find((b) => b.id === targetBranchId)?.name ?? targetBranchId,
-          file_name: currentFileName ?? currentFileId,
-          pr_title: prTitle.trim() || `Merge ${sourceBranch.name} → target`,
+          target_branch_name: targetBranchName,
+          file_name: isRoomMerge ? 'Entire Workspace / All Files' : (currentFileName ?? currentFileId),
+          pr_title: prTitle.trim() || `Merge ${sourceBranch.name} → ${targetBranchName}`,
           pr_description: prDescription.trim(),
+          is_room_merge: isRoomMerge,
         },
       });
-      toast('Merge request submitted — awaiting review', 'success');
+      toast(`Merge request for ${isRoomMerge ? 'entire room' : 'file'} submitted — awaiting review`, 'success');
       onCreated();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create merge request');
@@ -132,7 +137,7 @@ export function MergeRequestModal({
             <button
               className="btn btn-primary"
               onClick={handleSubmit}
-              disabled={loading || !currentFileId || !targetBranchId}
+              disabled={loading || !targetBranchId || (mergeScope === 'file' && !currentFileId)}
               style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
             >
               {loading ? 'Submitting…' : <><GitMerge size={14} /> Submit Merge Request</>}
@@ -141,42 +146,87 @@ export function MergeRequestModal({
         }
       >
         {/* Flow diagram */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'rgba(1,239,172,0.06)', border: '1px solid rgba(1,239,172,0.18)', borderRadius: 'var(--radius)', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'rgba(37, 99, 235, 0.08)', border: '1px solid rgba(37, 99, 235, 0.25)', borderRadius: 'var(--radius)', marginBottom: 16 }}>
           <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Source Branch</div>
-            <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--aurora-mint)' }}>{sourceBranch.name}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{sourceBranch.type}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Source Branch</div>
+            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent-secondary)' }}>{sourceBranch.name}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 2 }}>{sourceBranch.type}</div>
           </div>
-          <GitMerge size={22} style={{ color: 'var(--aurora-mint)', flexShrink: 0 }} />
+          <GitMerge size={24} style={{ color: 'var(--accent-secondary)', flexShrink: 0 }} />
           <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Target Branch</div>
-            <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)' }}>{targetBranch?.name ?? '—'}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{targetBranch?.type}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Target Branch</div>
+            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>{targetBranch?.name ?? '—'}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 2 }}>{targetBranch?.type}</div>
           </div>
         </div>
 
-        {/* File being merged */}
+        {/* Merge Scope Selector */}
         <div className="form-field">
-          <label style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>File Being Merged</label>
-          {currentFileId ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xs)', fontSize: 13, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
-              <FileText size={14} style={{ color: 'var(--text-secondary)' }} />
-              <span>{currentFileName ?? currentFileId}</span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '9px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 'var(--radius-xs)', color: 'var(--danger)', fontSize: 12 }}>
-              <AlertTriangle size={14} /> Open a file in the editor first
-            </div>
-          )}
+          <label style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-primary)', marginBottom: 8, display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Merge Scope
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setMergeScope('room')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: mergeScope === 'room' ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-surface)',
+                border: mergeScope === 'room' ? '1.5px solid var(--accent-secondary)' : '1px solid var(--border)',
+                color: mergeScope === 'room' ? 'var(--accent-secondary)' : 'var(--text-primary)',
+                fontWeight: mergeScope === 'room' ? 700 : 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <Layers size={16} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Entire Room</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>All workspace files & folders</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMergeScope('file')}
+              disabled={!currentFileId}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: mergeScope === 'file' ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-surface)',
+                border: mergeScope === 'file' ? '1.5px solid var(--accent-secondary)' : '1px solid var(--border)',
+                color: mergeScope === 'file' ? 'var(--accent-secondary)' : 'var(--text-primary)',
+                fontWeight: mergeScope === 'file' ? 700 : 600,
+                cursor: currentFileId ? 'pointer' : 'not-allowed',
+                opacity: currentFileId ? 1 : 0.6,
+                textAlign: 'left',
+              }}
+            >
+              <FileCode2 size={16} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Active File Only</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  {currentFileName ? currentFileName : 'No file open'}
+                </div>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* Commits picker (GitHub style) */}
         {commits.length > 0 && (
-          <div className="form-field">
-            <label style={{ color: 'var(--text-secondary)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <GitCommit size={14} /> Recent Commits on {sourceBranch.name} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(click to use as PR title)</span>
+          <div className="form-field" style={{ marginTop: 12 }}>
+            <label style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <GitCommit size={14} /> Recent Commits on {sourceBranch.name} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textTransform: 'none' }}>(click to use as PR title)</span>
             </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
               {commits.slice(0, 4).map((c) => (
                 <button
                   type="button"
@@ -186,7 +236,7 @@ export function MergeRequestModal({
                     setPrDescription(`Associated with commit: ${c.message}\nDate: ${new Date(c.created_at).toLocaleString()}`);
                   }}
                   className="btn btn-sm btn-ghost"
-                  style={{ fontSize: 11, padding: '3px 8px', border: '1px solid var(--border)', background: prTitle === c.message ? 'rgba(1,239,172,0.1)' : 'var(--bg-2)' }}
+                  style={{ fontSize: 11, padding: '4px 10px', border: '1px solid var(--border)', background: prTitle === c.message ? 'rgba(37, 99, 235, 0.15)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontWeight: 600 }}
                 >
                   <Clock size={11} style={{ marginRight: 4 }} /> {c.message}
                 </button>
@@ -196,14 +246,14 @@ export function MergeRequestModal({
         )}
 
         {/* PR Title */}
-        <div className="form-field" style={{ marginTop: 12 }}>
-          <label style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>PR Title</label>
+        <div className="form-field" style={{ marginTop: 14 }}>
+          <label style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 6 }}>PR Title</label>
           <input
             type="text"
             value={prTitle}
             onChange={(e) => setPrTitle(e.target.value)}
             placeholder={`Merge ${sourceBranch.name} → ${targetBranch?.name ?? 'target'}`}
-            style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)' }}
+            style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-popover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}
           />
         </div>
 
@@ -235,9 +285,9 @@ export function MergeRequestModal({
           </select>
         </div>
 
-        {/* Preview Diff Button */}
-        {decryptSnapshot && compareData && (
-          <div style={{ marginTop: 16 }}>
+        {/* Preview Diff Button for single file */}
+        {mergeScope === 'file' && decryptSnapshot && compareData && (
+          <div style={{ marginTop: 14 }}>
             <button
               type="button"
               className="btn btn-sm btn-full"
@@ -252,7 +302,7 @@ export function MergeRequestModal({
 
         <div style={{ marginTop: 16, padding: '10px 12px', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 'var(--radius-xs)', fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <AlertTriangle size={14} style={{ color: '#fbbf24', flexShrink: 0, marginTop: 1 }} />
-          A project lead or admin will review and apply this merge request to {targetBranch?.name}.
+          A project lead or reviewer can inspect and confirm this merge request into {targetBranch?.name}.
         </div>
 
         {error && <p className="form-error" style={{ marginTop: 12, color: '#ef4444' }}>{error}</p>}

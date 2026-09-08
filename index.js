@@ -15,6 +15,8 @@ function computeBlobHash(ciphertext) {
 }
 
 sqliteDb.serialize(() => {
+    sqliteDb.run("PRAGMA journal_mode = WAL;");
+    sqliteDb.run("PRAGMA busy_timeout = 5000;");
     sqliteDb.run(`
         CREATE TABLE IF NOT EXISTS file_snapshots (
             file_id     TEXT        NOT NULL,
@@ -295,8 +297,8 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     maxHttpBufferSize: 8e6,  // 8 MB — encrypted Yjs snapshots can be large
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    pingTimeout: 30000,
+    pingInterval: 10000,
     cors: { origin: "*" }
 });
 
@@ -351,9 +353,6 @@ app.use(express.static(reactBuildPath, {
         }
     }
 }));
-app.use(express.static("public"));
-app.use("/vendor/crypto-js", express.static(path.join(__dirname, "node_modules/crypto-js")));
-app.use("/vendor/yjs", express.static(path.join(__dirname, "node_modules/yjs/dist")));
 
 const MAX_UPDATE_SIZE = 8 * 1024 * 1024;  // 8 MB — raised from 512 KB; encrypted Yjs snapshots can be large
 const RATE_LIMIT_MS = 16;
@@ -491,6 +490,43 @@ io.on("connection", (socket) => {
             io.to(`user::${inviterUserId}`).emit("subroom-invite-response-received", payload);
         } else if (inviterId) {
             io.to(inviterId).emit("subroom-invite-response-received", payload);
+        }
+    });
+
+    socket.on("sync-branch-room", async ({ branchId, activeFileId, activeSnapshot }) => {
+        const safeBranchId = (branchId && typeof branchId === 'string')
+            ? branchId.replace(/[^a-zA-Z0-9_-]/g, '') || 'main'
+            : 'main';
+        const branchRoom = `branch::${safeBranchId}`;
+
+        // Invalidate in-memory lastSnapshotCache for all files on this branch
+        for (const [key] of lastSnapshotCache.entries()) {
+            if (key.endsWith(`::${safeBranchId}`)) {
+                lastSnapshotCache.delete(key);
+            }
+        }
+
+        // Warm cache if active snapshot was passed
+        if (activeFileId && activeSnapshot) {
+            const roomKey = `${activeFileId}::${safeBranchId}`;
+            lastSnapshotCache.set(roomKey, activeSnapshot);
+            // Broadcast the new snapshot to all peers currently in this file room
+            io.to(roomKey).emit("sync-response", { snapshot: activeSnapshot });
+        }
+
+        // Notify all sockets in this branch that the branch has synced
+        io.to(branchRoom).emit("branch-updated", { branchId: safeBranchId, activeFileId });
+    });
+
+    socket.on("force-reload-file", async ({ fileId, branchId }) => {
+        if (!fileId) return;
+        const safeBranchId = branchId ? String(branchId).replace(/[^a-zA-Z0-9_-]/g, '') || 'main' : 'main';
+        const roomKey = `${fileId}::${safeBranchId}`;
+        lastSnapshotCache.delete(roomKey);
+        const snap = await loadSnapshot(fileId, safeBranchId);
+        if (snap) {
+            lastSnapshotCache.set(roomKey, snap);
+            io.to(roomKey).emit("sync-response", { snapshot: snap });
         }
     });
 
@@ -643,17 +679,23 @@ app.use((req, res, next) => {
     const indexPath = path.join(reactBuildPath, "index.html");
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.sendFile(indexPath, (err) => {
-        if (err) {
-            res.sendFile(path.join(__dirname, "public", "index.html"), (err2) => {
-                if (err2) next();
-            });
-        }
+        if (err) next();
     });
 });
 
 const PORT = process.env.PORT || 3330;
 
+let retryCount = 0;
 server.on("error", (err) => {
+    if (err.code === "EADDRINUSE" && retryCount < 5) {
+        retryCount++;
+        console.warn(`[Gateway] Port ${PORT} busy (attempt ${retryCount}/5), retrying in 1s...`);
+        setTimeout(() => {
+            try { server.close(); } catch {}
+            server.listen(PORT, "0.0.0.0");
+        }, 1000);
+        return;
+    }
     if (err.code === "EADDRINUSE") {
         console.error(`\nPort ${PORT} is already in use.`);
         console.error("Another server is already running on this port — stop it first:\n");

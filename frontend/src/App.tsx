@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastContainer } from './components/shared/Toast';
 import { NulltorLogo } from './components/shared/NulltorLogo';
+import { InteractiveBackground } from './components/shared/InteractiveBackground';
 
 // Code-split pages for instant initial bundle loading
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -36,12 +37,16 @@ export function App() {
   const hydrate = useAuthStore((s) => s.hydrate);
 
   useEffect(() => {
+    if (window.location.pathname && window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
+      const cleanPath = window.location.pathname;
+      window.history.replaceState(null, '', `/#${cleanPath}`);
+    }
     hydrate();
   }, [hydrate]);
 
   return (
     <ThemeProvider>
-      <div className="global-bg-wrapper" />
+      <InteractiveBackground />
       <HashRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>

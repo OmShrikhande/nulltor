@@ -77,8 +77,9 @@ export function TimelinePanel({
       const currentBase64 = decrypt(currentSnap);
       const pastBase64 = await resolveCommitSnapshot(commit);
 
-      setDiffOriginal(currentBase64);
-      setDiffModified(pastBase64);
+      // Historical commit on left (Base), Current editor on right (Working Modified)
+      setDiffOriginal(pastBase64);
+      setDiffModified(currentBase64);
       setDiffCommitTime(new Date(commit.created_at).toLocaleString());
       setShowDiff(true);
     } catch (e) {
@@ -206,9 +207,9 @@ export function TimelinePanel({
           modifiedSnapshotBase64={diffModified}
           fileName={fileName}
           title="Commit Diff"
-          subtitle="Current Editor (Left) → Historical Commit (Right)"
-          leftLabel="Current Editor (Left)"
-          rightLabel={`Historical Commit: ${diffCommitTime} (Right)`}
+          subtitle="Historical Commit (Left) → Current Working Editor (Right)"
+          leftLabel={`Historical Commit: ${diffCommitTime} (Left)`}
+          rightLabel="Current Working Editor (Right)"
           onClose={() => setShowDiff(false)}
         />
       )}

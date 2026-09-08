@@ -93,11 +93,13 @@ async def create_project(
     if user.role == UserRole.member:
         raise HTTPException(status_code=403, detail="Members cannot create projects")
 
+    import secrets
     project = Project(
         name=payload.name,
         description=payload.description,
         status=payload.status or "live",
         owner_id=user.id,
+        room_salt=secrets.token_hex(16),
     )
     db.add(project)
     await db.flush()
@@ -154,6 +156,10 @@ async def get_project(
     user: User = Depends(get_current_user),
 ):
     project = await _assert_project_access(db, project_id, user)
+    if not project.room_salt:
+        import secrets
+        project.room_salt = secrets.token_hex(16)
+        await db.flush()
     return ProjectRead.model_validate(project)
 
 
@@ -271,7 +277,7 @@ async def get_encrypted_data(
     """Fetches all encrypted data (file_snapshots and commits) for migration purposes."""
     project = await _assert_project_access(db, project_id, user)
     
-    from sqlalchemy import text as sa_text
+    from sqlalchemy import text as sa_text, bindparam
     from models.branch import Branch as BranchModel
     
     branches_result = await db.execute(select(BranchModel).where(BranchModel.project_id == project_id))
@@ -280,8 +286,8 @@ async def get_encrypted_data(
     
     snapshots = []
     if branch_ids:
-        placeholders = ", ".join(f"'{bid}'" for bid in branch_ids)
-        res = await db.execute(sa_text(f"SELECT file_id, branch_id, data FROM file_snapshots WHERE branch_id IN ({placeholders})"))
+        stmt = sa_text("SELECT file_id, branch_id, data FROM file_snapshots WHERE branch_id IN :bids").bindparams(bindparam("bids", expanding=True))
+        res = await db.execute(stmt, {"bids": branch_ids})
         for row in res.fetchall():
             snapshots.append({"file_id": row[0], "branch_id": row[1], "data": row[2]})
             
@@ -313,24 +319,51 @@ async def migrate_passphrase(
 
     project.passphrase_hash = _pwd_ctx.hash(payload.new_passphrase)
     
-    from sqlalchemy import text as sa_text
+    import hashlib
+    from sqlalchemy import text as sa_text, bindparam
     from models.branch import Branch as BranchModel
     from models.commit import Commit
+    from models.storage import EncryptedBlob
     
-    # 1. Update file_snapshots
+    # 1. Update file_snapshots and live_keyframes
     branches_result = await db.execute(select(BranchModel).where(BranchModel.project_id == project_id))
     branches = branches_result.scalars().all()
     branch_ids = [str(b.id) for b in branches]
     
     if branch_ids:
-        placeholders = ", ".join(f"'{bid}'" for bid in branch_ids)
-        await db.execute(sa_text(f"DELETE FROM file_snapshots WHERE branch_id IN ({placeholders})"))
+        stmt_del = sa_text("DELETE FROM file_snapshots WHERE branch_id IN :bids").bindparams(bindparam("bids", expanding=True))
+        await db.execute(stmt_del, {"bids": branch_ids})
+
+        # Invalidate old live keyframes for these branches
+        for bid in branch_ids:
+            await db.execute(
+                sa_text("DELETE FROM live_keyframes WHERE room_key LIKE :pattern"),
+                {"pattern": f"%::{bid}"}
+            )
         
         for snap in payload.snapshots:
             await db.execute(
                 sa_text("INSERT INTO file_snapshots (file_id, branch_id, data, updated_at) VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP) ON CONFLICT(file_id, branch_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP"),
                 {"fid": str(snap.file_id), "bid": snap.branch_id, "data": snap.data}
             )
+            if snap.data:
+                blob_hash = hashlib.sha256(snap.data.encode("utf-8")).hexdigest()
+                existing_blob = await db.execute(select(EncryptedBlob).where(EncryptedBlob.hash == blob_hash))
+                if not existing_blob.scalar_one_or_none():
+                    new_blob = EncryptedBlob(
+                        hash=blob_hash,
+                        ciphertext=snap.data,
+                        size_bytes=len(snap.data.encode("utf-8")),
+                        is_binary=False,
+                    )
+                    db.add(new_blob)
+                    await db.flush()
+
+                room_key = f"{snap.file_id}::{snap.branch_id}"
+                await db.execute(
+                    sa_text("INSERT INTO live_keyframes (room_key, blob_hash, updated_at) VALUES (:rk, :bh, CURRENT_TIMESTAMP) ON CONFLICT(room_key) DO UPDATE SET blob_hash = excluded.blob_hash, updated_at = CURRENT_TIMESTAMP"),
+                    {"rk": room_key, "bh": blob_hash}
+                )
             
     # 2. Update commits
     for commit_data in payload.commits:
@@ -367,11 +400,11 @@ async def reset_passphrase(
     project.passphrase_hash = _pwd_ctx.hash(payload.passphrase)
     await db.flush()
 
-    # Wipe all encrypted snapshots for this project — they were encrypted
+    # Wipe all encrypted snapshots and live keyframes for this project — they were encrypted
     # with the old passphrase and cannot be decrypted with the new one.
     # Members will start with fresh (empty) content encrypted with the new passphrase.
     try:
-        from sqlalchemy import text as sa_text
+        from sqlalchemy import text as sa_text, bindparam
         from models.branch import Branch as BranchModel
         branches_result = await db.execute(
             select(BranchModel).where(BranchModel.project_id == project_id)
@@ -379,11 +412,15 @@ async def reset_passphrase(
         branches = branches_result.scalars().all()
         branch_ids = [str(b.id) for b in branches]
         if branch_ids:
-            placeholders = ", ".join(f"'{bid}'" for bid in branch_ids)
-            await db.execute(sa_text(
-                f"DELETE FROM file_snapshots WHERE branch_id IN ({placeholders})"
-            ))
-            logger.info(f"Wiped {len(branch_ids)} branch snapshots after passphrase reset for project {project_id}")
+            stmt_del_snaps = sa_text("DELETE FROM file_snapshots WHERE branch_id IN :bids").bindparams(bindparam("bids", expanding=True))
+            await db.execute(stmt_del_snaps, {"bids": branch_ids})
+
+            for bid in branch_ids:
+                await db.execute(
+                    sa_text("DELETE FROM live_keyframes WHERE room_key LIKE :pattern"),
+                    {"pattern": f"%::{bid}"}
+                )
+            logger.info(f"Wiped {len(branch_ids)} branch snapshots and live keyframes after passphrase reset for project {project_id}")
     except Exception as e:
         logger.warning(f"Could not wipe snapshots on passphrase reset: {e}")
 

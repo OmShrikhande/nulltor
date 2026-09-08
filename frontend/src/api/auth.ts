@@ -25,4 +25,6 @@ export const authApi = {
 
   changePassword: (old_password: string, new_password: string) =>
     post<{ message: string }>('/auth/change-password', { old_password, new_password }),
+
+  logout: () => post<{ message: string }>('/auth/logout'),
 };

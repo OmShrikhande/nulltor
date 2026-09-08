@@ -30,14 +30,17 @@ pnpm-debug.log*
 *.db
 *.sqlite
 *.sqlite3
+*.bak
 backend/*.db
 backend/nulltor.db
+database/backups/
 backend/storage/snapshots/*
 !backend/storage/snapshots/.gitkeep
 snapshots/
 backend/temp_exec/
 temp_exec/
 .temp_exec/
+*.zip
 
 # ─── Environment & Secrets ───────────────────
 .env
@@ -62,3 +65,8 @@ desktop.ini
 *.swp
 *.swo
 public_react/assets/
+
+# ─── Playwright Testing ────────────────────────
+test-results/
+playwright-report/
+blob-report/

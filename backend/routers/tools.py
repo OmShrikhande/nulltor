@@ -13,6 +13,9 @@ from models.branch import Branch
 from models.audit_log import AuditAction, ResourceType
 from services.audit_service import log_action
 
+from core.agent_security import is_sensitive_file
+from routers.projects import _assert_project_access
+
 router = APIRouter(prefix="/tools", tags=["AI Tools"])
 
 
@@ -101,7 +104,15 @@ async def execute_tool(
 ):
     action = payload.action.lower().strip()
     project_id = payload.project_id
+    await _assert_project_access(db, project_id, user)
     branch_id = await _resolve_branch_id(db, project_id, payload.branch_id)
+
+    # Enforce security guardrails against sensitive files
+    if payload.file_path and is_sensitive_file(payload.file_path):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Security Policy Violation: Access or modification to sensitive file '{payload.file_path}' is restricted."
+        )
 
     # 1. LIST FILES
     if action in ("list_files", "list"):
@@ -113,6 +124,7 @@ async def execute_tool(
         file_list = [
             {"id": str(n.id), "name": n.name, "type": n.type.value, "parent_id": str(n.parent_id) if n.parent_id else None}
             for n in nodes
+            if not is_sensitive_file(n.name)
         ]
         return ToolResponse(
             success=True,
@@ -204,11 +216,25 @@ async def execute_tool(
         if not file_node:
             raise HTTPException(status_code=404, detail=f"File '{payload.file_path}' not found in current branch")
 
+        stmt = text("""
+            SELECT data FROM file_snapshots 
+            WHERE file_id = :fid AND (branch_id = :bid OR branch_id = 'main')
+            ORDER BY updated_at DESC LIMIT 1
+        """)
+        res = await db.execute(stmt, {"fid": str(file_node.id), "bid": str(branch_id)})
+        row = res.fetchone()
+        file_content = row[0] if row and row[0] else ""
+
         return ToolResponse(
             success=True,
             action="read_file",
-            message=f"Read file metadata for '{payload.file_path}'",
-            data={"file_id": str(file_node.id), "name": file_node.name, "parent_id": str(file_node.parent_id) if file_node.parent_id else None}
+            message=f"Read file '{payload.file_path}' ({len(file_content)} chars)",
+            data={
+                "file_id": str(file_node.id),
+                "name": file_node.name,
+                "parent_id": str(file_node.parent_id) if file_node.parent_id else None,
+                "content": file_content
+            }
         )
 
     # 4. DELETE FILE

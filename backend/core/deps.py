@@ -24,20 +24,29 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ):
-    """Extract and validate the JWT from the Authorization header."""
+    """Extract and validate the JWT from the HTTP-Only cookie or Authorization header."""
     User = _get_user_model()
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not credentials:
+
+    # 1. Try reading access token from HttpOnly cookie
+    raw_token = request.cookies.get("nulltor_access_token")
+
+    # 2. Fallback to Authorization: Bearer header
+    if not raw_token and credentials:
+        raw_token = credentials.credentials
+
+    if not raw_token:
         raise credentials_exception
 
-    payload = decode_access_token(credentials.credentials)
+    payload = decode_access_token(raw_token)
     if not payload:
         raise credentials_exception
 

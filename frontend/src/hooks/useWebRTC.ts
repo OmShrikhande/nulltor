@@ -16,6 +16,32 @@ export function useWebRTC(socket: Socket | null, roomId: string | null) {
   const isVideoActiveRef = useRef(false);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const iceServersRef = useRef<RTCIceServer[]>([
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/webrtc/ice-servers')
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error(`Status ${res.status}`);
+      })
+      .then(data => {
+        if (isMounted && data) {
+          const servers = data.iceServers || data.ice_servers;
+          if (Array.isArray(servers) && servers.length > 0) {
+            iceServersRef.current = servers;
+          }
+        }
+      })
+      .catch(err => {
+        console.warn("[WebRTC] Using default STUN servers:", err);
+      });
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     localStreamRef.current = localStream;
@@ -56,11 +82,7 @@ export function useWebRTC(socket: Socket | null, roomId: string | null) {
     }
 
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-      ]
+      iceServers: iceServersRef.current
     });
 
     pc.onicecandidate = (event) => {

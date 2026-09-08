@@ -41,12 +41,12 @@ export interface BlobResponse {
 }
 
 export const commitsApi = {
-  getCommits: async (projectId: string, fileId: string, branchId?: string): Promise<CommitResponse[]> => {
-    let url = `/projects/${projectId}/commits?file_id=${encodeURIComponent(fileId)}`;
-    if (branchId) {
-      url += `&branch_id=${encodeURIComponent(branchId)}`;
-    }
-    return get<CommitResponse[]>(url);
+  getCommits: async (projectId: string, fileId?: string, branchId?: string): Promise<CommitResponse[]> => {
+    const params: string[] = [];
+    if (fileId) params.push(`file_id=${encodeURIComponent(fileId)}`);
+    if (branchId) params.push(`branch_id=${encodeURIComponent(branchId)}`);
+    const qs = params.length > 0 ? `?${params.join('&')}` : '';
+    return get<CommitResponse[]>(`/projects/${projectId}/commits${qs}`);
   },
   
   createCommit: async (projectId: string, payload: CommitCreate): Promise<CommitResponse> => {

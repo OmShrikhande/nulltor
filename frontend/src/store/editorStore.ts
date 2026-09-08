@@ -31,11 +31,16 @@ interface EditorState {
   openTabs: DirectoryNode[];
   language: string;
   isDirty: boolean;
+  cursorPosition: { line: number; column: number };
+  diagnosticCounts: { errors: number; warnings: number };
   setOpenFile: (file: DirectoryNode | null) => void;
   openTab: (file: DirectoryNode) => void;
   closeTab: (id: string) => void;
+  clearAllTabs: () => void;
   setLanguage: (lang: string) => void;
   setDirty: (dirty: boolean) => void;
+  setCursorPos: (pos: { line: number; column: number }) => void;
+  setDiagnosticCounts: (counts: { errors: number; warnings: number }) => void;
   // alias used by some components
   setFile: (file: DirectoryNode | null) => void;
 }
@@ -45,6 +50,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   openTabs: [],
   language: 'plaintext',
   isDirty: false,
+  cursorPosition: { line: 1, column: 1 },
+  diagnosticCounts: { errors: 0, warnings: 0 },
 
   setOpenFile: (file) =>
     set((state) => {
@@ -90,8 +97,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     }),
 
+  clearAllTabs: () =>
+    set({
+      openFile: null,
+      openTabs: [],
+      language: 'plaintext',
+      isDirty: false,
+    }),
+
   setLanguage: (lang) => set({ language: lang }),
   setDirty: (dirty) => set({ isDirty: dirty }),
+  setCursorPos: (pos) => set({ cursorPosition: pos }),
+  setDiagnosticCounts: (counts) => set({ diagnosticCounts: counts }),
   // alias
   setFile: (file) => get().setOpenFile(file),
 }));
