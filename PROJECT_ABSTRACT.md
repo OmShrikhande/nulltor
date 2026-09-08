@@ -1,11 +1,11 @@
 # Nulltor: Secure LAN Collaborative IDE & Version Control Platform
-## Comprehensive Architectural Abstract v2.5 & Technical Specification Document
+## Comprehensive Architectural Abstract & Technical Specification Document
 
 ---
 
 ## 1. Executive Summary & Vision
 
-**Nulltor** is an enterprise-grade, peer-to-peer collaborative development environment and localized version control platform designed to operate seamlessly over local area networks (LAN) or air-gapped enterprise environments. It fuses the real-time collaborative editing experience of **VS Code** with the branch governance, code reviews, and audit trails of **GitHub**, combined with an autonomous **AI Software Engineering Agent**.
+**Nulltor** is an enterprise-grade, peer-to-peer collaborative development environment and localized version control platform. It is designed to operate seamlessly over local area networks (LAN) or air-gapped enterprise environments. Nulltor fuses the real-time collaborative editing experience of **VS Code** with the branch governance, code reviews, and audit trails of **GitHub**, combined with an autonomous **AI Software Engineering Agent**.
 
 Nulltor guarantees 100% data sovereignty and zero-trust security: code snapshots and CRDT synchronization deltas are encrypted client-side using military-grade cryptography (**AES-256-GCM**) before transmission, ensuring that the central gateway or host server remains completely blind to plain source code.
 
@@ -25,143 +25,117 @@ graph TD
 
 ---
 
-## 2. Version Evolution: Full Upgrade Matrix (v1.0 $\rightarrow$ v2.5)
+## 2. Comprehensive Feature Set
 
-> **Verdict: Full-stack modernization delivering zero-latency cryptographic editing, hardened authentication, interactive terminal sessions, language intelligence (LSP), and comprehensive developer tooling.**
+Nulltor provides a complete ecosystem for modern software development without relying on external cloud providers. 
 
-### 2.1 Comparative Upgrade Matrix
+### 🌟 Core Collaborative Features
+- **Real-Time Code Synchronization**: Zero-latency collaborative editing powered by CRDTs (Conflict-free Replicated Data Types).
+- **Live Peer Presence & Cursors**: See exactly what your teammates are typing, selecting, and viewing in real-time.
+- **WebRTC Video & Audio Chat**: Native peer-to-peer mesh calling built directly into the IDE without third-party servers.
+- **Zero-Trust Encryption (E2EE)**: Client-side AES-256-GCM encryption means the server never sees the raw code.
 
-| Subsystem / Feature | Previous Abstract (v1.0) | Current Codebase (v2.5) | Evaluation |
-| :--- | :--- | :--- | :--- |
-| **Authentication & Cookie Security** | JWT tokens stored purely in `localStorage` vulnerable to XSS token theft. | **HttpOnly Cookie Architecture**: JWT refresh tokens stored as `HttpOnly`, `SameSite=Lax` cookies with automatic silent rotation, `/logout` invalidation, and `credentials: 'include'` proxy transport. | 🟢 **CRITICAL SECURITY UPGRADE** |
-| **Terminal WebSocket Authentication** | Open WebSocket `/ws/terminal` endpoint allowing unauthenticated process execution. | **JWT-Guarded Terminal Gateway**: Enforced cryptographic JWT validation on `/ws/terminal`. Rejects unauthenticated connections with WebSocket code `4001`. | 🟢 **CRITICAL SECURITY UPGRADE** |
-| **Per-Project Cryptographic Salts** | Hardcoded or static cryptographic salts across all project vaults. | **Dynamic Per-Project Cryptographic Salts**: 128-bit cryptographically secure salts (`secrets.token_hex(16)`) generated per project and bound to PBKDF2 key derivation. | 🟢 **CRITICAL SECURITY UPGRADE** |
-| **Language Server Protocol (LSP)** | No real-time syntax checking or linting; errors only discovered on build. | **Integrated LSP Microservice**: `/api/lsp/analyze` endpoint running Python AST parsing, JSON syntax validation, C/C++ bracket balancing/GCC diagnostics, debounced Monaco squiggle markers, and interactive PROBLEMS drawer. | 🟢 **MAJOR NEW FEATURE** |
-| **Multi-Tab Terminal Subsystem** | Single execution buffer; container exit killed terminal; shared dead output. | **Multi-Tab Interactive Terminal Drawer**: Tabbed terminal manager (`Terminal 1`, `Terminal 2`, `+ New`, `Kill / Clear`) with isolated xterm buffers and native interactive shell spawning (PowerShell on Windows via WinPTY, Bash on POSIX). | 🟢 **MAJOR NEW FEATURE** |
-| **Workspace Full-Text Search (Grep)** | Basic filename filter only. | **Dual-Engine Workspace Search**: Toggle between **Filename Search** and **Content Search (Grep)** across all workspace files with line numbers, syntax snippets, and jump-to-line navigation. | 🟢 **MAJOR NEW FEATURE** |
-| **Prettier & Code Formatter** | No code formatting capability. | **Multi-Language In-Browser Beautifier**: Formats JS, TS, JSON, CSS, HTML, Python (PEP-8), and C/C++ via `Shift + Alt + F` or Format button. | 🟢 **MAJOR NEW FEATURE** |
-| **Extensions Ecosystem** | No extensions UI / Mock items. | **Live Open VSX Marketplace Integration**: Connects directly to the Eclipse Open VSX registry (`open-vsx.org`) via backend caching proxy (`/api/extensions/search`, `/api/extensions/popular`, `/api/extensions/batch`), providing real extension icons, publishers, download counters (`☁ 6.6M`), star ratings (`★ 4.8`), and instant install/uninstall lifecycle management with zero hardcoded or dummy data. | 🟢 **MAJOR NEW FEATURE** |
-| **Status Bar & Live Telemetry** | Static branch label and unstyled peer count. | **Live Diagnostics Status Bar**: Real-time connection status (`● Connected`, `⚠ Reconnecting...`, `Offline`), E2EE peer badge, diagnostic error/warning counters, cursor position (`Ln X, Col Y`), indentation, encoding, and language tag. | 🟢 **MAJOR UPGRADE** |
-| **PBKDF2 Cryptographic Speed** | 100,000 PBKDF2 iterations recomputed per keystroke (~45ms CPU lockup). | **In-Memory Derived Key Caching**: Memoized session salt + LRU key cache (`keyCache`) reduces keystroke crypto time to **`<0.01ms`** with zero typing latency. | 🟢 **CRITICAL PERFORMANCE UPGRADE** |
-| **Frontend Bundle Size & Code-Splitting** | Monolithic 1.02 MB bundle (`index.js`) loaded upfront on every page. | **78% Initial Load Reduction**: Dynamic `React.lazy()` chunking drops entry bundle to **228 kB**. Dashboard and settings load in **`<60ms`**. | 🟢 **CRITICAL SPEED UPGRADE** |
-| **HTTP Caching Policy** | `no-store` on all static files forced complete 1MB re-downloads on reload. | **Immutable Hashed Asset Caching**: 1-year immutable caching on `/assets/*` with `no-store` preserved only on `index.html`. | 🟢 **MAJOR UPGRADE** |
-| **Real-Time Save & Persistence** | Auto-flush was broken due to React stale closures & 512KB payload caps. | **Fully Functional**: Synchronous `docRef` bridge, 8MB payload headroom, top bar Save button, tab bar Save button, and `Ctrl+S` / `Cmd+S` shortcuts. | 🟢 **MAJOR UPGRADE** |
-| **Editor UX: Dirty Tab Tracking & Auto-Save** | No unsaved indicator; switching tabs risked losing uncommitted state. | **Dirty Indicator Dot (`●`)**: Visual sapphire indicator on modified tabs + **Automatic Save on Tab Switch** guaranteeing zero data loss. | 🟢 **MAJOR UPGRADE** |
-| **Automated Merge CAS Pipeline** | Merge confirmation did not sync backend CAS tables. | **Atomic CAS Sync**: `confirm_merge` populates `encrypted_blobs`, `live_keyframes`, and `file_snapshots` simultaneously on PR approval. | 🟢 **MAJOR UPGRADE** |
+### 💻 Developer Experience (IDE)
+- **Embedded Monaco Editor Core**: The exact same engine powering VS Code, customized with themes and syntax highlighting.
+- **Language Server Protocol (LSP)**: Real-time syntax checking, linting, error squiggles, and contextual autocomplete for Python, JSON, C, C++, and more.
+- **Multi-Tab Interactive Terminal**: Tabbed terminal manager supporting multiple native shell sessions (PowerShell/Bash) with ANSI support.
+- **Code Execution Sandbox**: Instant execution of scripts (`.py`, `.js`, `.ts`, `.c`, `.cpp`, `.go`, `.rs`) directly from the IDE.
+- **In-Browser Code Beautifier**: Instant formatting for JS, TS, JSON, CSS, HTML, Python, and C/C++ via `Shift + Alt + F`.
+- **Dual-Engine Full-Text Search**: Instantly grep across the entire workspace or filter by filenames.
+- **Live Diagnostics Status Bar**: Real-time connection status, error/warning counters, and cursor position tracking.
 
----
+### 🛡️ Version Control & Branch Governance
+- **GitHub-Style Branching**: Supports `main` (trunk), feature branches, and private developer vaults.
+- **Pull Requests & Code Reviews**: Decentralized PR governance with line-by-line diff viewers and approval workflows.
+- **Atomic Content-Addressed Storage (CAS)**: Git-like file snapshots and commit graphs.
 
-## 3. Core Functional Modules & Architecture
+### 🤖 AI Engineering Capabilities
+- **AgentPanel (Autonomous Developer)**: A ReAct agent capable of reading/writing files and autonomous tool usage.
+- **DevBot**: Embedded intelligent conversational assistant.
+- **Inline Ghost-Text Autocomplete**: Copilot-style real-time code suggestions.
 
-### 3.1 Real-Time Collaborative IDE & Communications
-* **Monaco Editor Core**: Embedded VS Code editor engine customized with `nulltor-dark-pro` theme (Sapphire Blue cursor, amber numerals, slate comments, neon error squiggles).
-* **CRDT Document Synchronization (Yjs)**: Conflict-free character-level synchronization across LAN peers. Edits propagate as AES-256-GCM encrypted deltas.
-* **Synchronous `docRef` State Bridge**: Eliminates React state closure delay, ensuring Monaco keystrokes write into the live Yjs document synchronously.
-* **Universal Save Pipeline**:
-  * Top action bar Save button with live spinner feedback.
-  * Tab bar quick-save trigger.
-  * Monaco and global window `Ctrl+S` / `Cmd+S` keybindings.
-  * Automatic 2.5s debounced idle snapshot flushing.
-  * Automatic save on file tab switching.
-* **Integrated WebRTC Video/Audio Calling**: Native peer-to-peer mesh calling using `RTCPeerConnection` with Socket.IO signaling. No external third-party media servers required.
-* **Inline AI Autocomplete**: Real-time ghost-text autocomplete (Copilot style) querying Groq / OpenAI-compatible models with 650ms debounce.
-
-### 3.2 Dual-Engine Multi-Tab Terminal & Sandbox
-* **Multi-Tab Terminal Drawer**: Tabbed workspace drawer supporting multiple concurrent sessions (`Terminal 1`, `Terminal 2`, `+ New`, `Kill / Clear`).
-* **Interactive Shell Subsystem (`mode: "shell"`)**:
-  * **Windows**: Native WinPTY integration spawning interactive `powershell.exe -NoLogo` with full ANSI escape support, tab completion, arrow-key navigation, and live stdin/stdout streaming.
-  * **POSIX (Linux/macOS)**: Native `pty.fork()` spawning `/bin/bash` or `/bin/sh`.
-* **Execution Sandbox Subsystem (`mode: "exec"`)**:
-  * Automated language runtime detection:
-    * **Python (`.py`)**: `python -u <file>`
-    * **JavaScript (`.js`)**: `node <file>`
-    * **TypeScript / TSX / JSX (`.ts`, `.tsx`, `.jsx`)**: `npx -y tsx <file>`
-    * **C (`.c`)**: Local GCC compilation or Docker container runner (`gcc <file> -o runner && ./runner`)
-    * **C++ (`.cpp`, `.cc`)**: Local G++ compilation (`g++ -std=c++17 <file> -o runner && ./runner`)
-    * **Go (`.go`)**: `go run <file>`
-    * **Rust (`.rs`)**: `rustc <file> -o runner && ./runner`
-  * Optional Docker container isolation with automatic native host PTY fallback.
-
-### 3.3 Language Server Protocol (LSP) & Syntax Diagnostics
-* **Backend Analysis Endpoint (`/api/lsp/analyze`)**:
-  * **Python**: Native Python AST parsing identifying exact line and column syntax errors with explanatory diagnostics.
-  * **JSON**: Strict structural validation and offset reporting.
-  * **C / C++**: Bracket balance auditing and local GCC/Clang syntax parsing.
-  * **Completions**: Language-specific contextual keyword completions.
-* **Monaco Diagnostic Synchronization**: Live debounced background marker synchronization (`monaco.editor.setModelMarkers`) with click-to-line navigation in the **PROBLEMS** panel.
-
-### 3.4 Version Control & Branch Governance
-* **Branch Hierarchy**: `main` (synchronized team trunk), `subroom` (isolated feature branch), `private` (zero-knowledge developer vault).
-* **GitHub-Style Branch Pull & Sync**: 1-click `Pull / Sync` reconciles missing directories and merges upstream code into local branches.
-* **Decentralized PR Governance**: Open review visibility for project members, branch-scoped merge authority, and automatic merge commits.
-* **Monaco Side-by-Side Diff Viewer**: Visual diff comparison with line-by-line additions and deletions.
-
-### 3.5 Autonomous AI Software Engineering Agent & DevBot
-* **Dual AI Subsystems**:
-  * **AgentPanel**: Autonomous ReAct agent executing multi-turn tool loops (`create_file`, `write_code_to_file`, `read_active_file`, `list_workspace_files`) using `openai/gpt-oss-120b`.
-  * **BotpressPanel**: Embedded intelligent conversational developer assistant (`DevBot`).
-
-### 3.6 Zero-Trust Client-Side Cryptography (E2EE)
-* **Key Derivation (PBKDF2)**: 256-bit symmetric keys derived via PBKDF2-HMAC-SHA256 with 100,000 iterations and per-project unique cryptographic salts.
-* **High-Speed In-Memory Key Cache**: Bounded LRU cache ensures instant key lookup for all real-time editing operations.
-* **Authenticated Encryption (AES-256-GCM)**: 12-byte initialization vectors (IVs) and 16-byte authentication tags ensure zero plaintext exposure on servers.
-* **Legacy Backward Compatibility**: Transparent decryption support for legacy AES-256-CBC ciphertexts.
-
-### 3.7 Live Open VSX Marketplace Subsystem
-* **Live Registry Integration**: Connects dynamically to the open-source Eclipse Open VSX marketplace via `/api/extensions/search`, `/api/extensions/popular`, and `/api/extensions/batch`.
-* **Zero Dummy / Hardcoded Data**: Replaces all mocked extensions with real marketplace items featuring authentic publisher namespaces, extension logos from the Open VSX CDN, real download telemetry (`☁ 6.6M`), and average star ratings (`★ 4.8`).
-* **Lifecycle Management**: Real-time install and uninstall actions with `localStorage` persistence and event broadcasting across IDE subsystems.
-* **Rich Extension Modal**: Detailed extension inspection view with direct links to `open-vsx.org` listings, version tags, and full markdown descriptions.
+### 🧩 Ecosystem Integration
+- **Live Open VSX Marketplace**: Install and manage real VS Code extensions directly from the open-source Eclipse VSX registry.
 
 ---
 
-## 4. Technology Stack Specification
+## 3. Technology Stack & Libraries Used
 
-### 4.1 Frontend Stack
-* **Framework**: React 19 + TypeScript + Vite 6 (Code-split chunks)
-* **Editor**: `@monaco-editor/react` (v4.7.0)
-* **CRDT & Networking**: `yjs` (v13.6.31), `socket.io-client` (v4.8.1)
-* **Cryptography**: `@noble/ciphers` (v2.2.0), `@noble/hashes` (v2.2.0), `crypto-js`
-* **Terminal**: `@xterm/xterm` (v5.5.0), `@xterm/addon-fit` (v0.8.0)
-* **State Management**: `zustand` (v5.0.3)
-* **Styling & Icons**: Custom Vanilla CSS Design System + `lucide-react` (v0.475.0)
+Nulltor is built on a highly optimized, modern technology stack spanning frontend, middleware, backend, and data layers.
 
-### 4.2 Gateway & Real-Time Sync Server
-* **Server**: Node.js + Express 5 + Socket.IO (v4.8.3, 8MB max payload buffer)
-* **Reverse Proxy**: `http-proxy-middleware` (v4.2.0)
-* **Storage Drivers**: `pg` (v8.23.0), `sqlite3` (v6.0.1)
-* **Discovery**: `multicast-dns` (v7.2.5) for `nulltor.local` advertising
+### 🖥️ Frontend (Client Application)
+- **Core Framework**: React 19 + TypeScript + Vite 6
+- **Editor Engine**: `@monaco-editor/react` (v4.7.0)
+- **CRDT & Sync**: `yjs` (v13.6.31)
+- **Real-time Networking**: `socket.io-client` (v4.8.3)
+- **Terminal Emulator**: `@xterm/xterm` (v6.0.0) + `@xterm/addon-fit`
+- **Cryptography**: `@noble/ciphers` (v2.3.0), `@noble/hashes` (v2.3.0), `crypto-js` (v4.2.0)
+- **State Management**: `zustand` (v5.0.14)
+- **Routing**: `react-router-dom` (v7.18.2)
+- **UI & Styling**: Vanilla CSS + `lucide-react` (icons) + `react-diff-view` (PR diffs) + `marked` (Markdown parsing)
 
-### 4.3 Backend & AI Services
-* **Framework**: Python FastAPI + Uvicorn
-* **ORM & Database**: SQLAlchemy 2.0 Async + `asyncpg` + `aiosqlite`
-* **Authentication**: JWT (`python-jose`), bcrypt password hashing (`passlib`), HttpOnly cookies
-* **Terminal Engine**: `pywinpty` (Windows WinPTY) / `pty` (POSIX)
-* **Language Intelligence**: Python AST parser, GCC/Clang lint bridge
+### 🌉 Unified Gateway & Real-Time Server
+- **Runtime**: Node.js + Express 5
+- **WebSocket Engine**: Socket.IO (v4.8.3)
+- **Reverse Proxy**: `http-proxy-middleware`
+- **Local Network Discovery**: `multicast-dns` (mDNS for `nulltor.local` advertising)
+
+### ⚙️ Backend API & AI Services
+- **Web Framework**: Python FastAPI + Uvicorn (ASGI)
+- **Database ORM**: SQLAlchemy 2.0 (Async) + Alembic (Migrations)
+- **Security & Auth**: `python-jose` (JWT), `passlib[bcrypt]` (Password Hashing), `python-multipart`
+- **Database Drivers**: `asyncpg` (PostgreSQL), `aiosqlite` (SQLite)
+- **Terminal Integration**: `pywinpty` (Windows PTY) / native `pty` (POSIX)
+- **Data Science / AI Libs**: `numpy`, `pandas`, `scipy`, `scikit-learn`, `tensorflow`, `beautifulsoup4`
+- **HTTP Client**: `httpx`, `requests`
 
 ---
 
-## 5. System Execution Models
+## 4. Data Backup, Storage & Reliability Architecture
 
-| Deployment Mode | Command | Description |
+Nulltor employs a highly resilient, hybrid database approach to ensure zero data loss and maximum availability across varying deployment scales.
+
+### 4.1 Tri-Engine Storage System
+Nulltor utilizes a **Tri-Engine Storage** pattern which automatically selects and falls back between database systems based on availability and load:
+1. **PostgreSQL (Primary Tier)**: When deployed in enterprise environments (via Docker or custom URLs), Nulltor uses PostgreSQL as the primary high-concurrency database.
+2. **SQLite (Auto-Fallback Tier)**: If PostgreSQL is unavailable, Nulltor automatically gracefully falls back to a localized SQLite database (`nulltor.db`) running in Write-Ahead Logging (WAL) mode (`PRAGMA journal_mode=WAL`), allowing concurrent readers and debounced writers.
+3. **In-Memory Volatile Tier**: For transient socket state, cursor positions, and WebRTC signaling, data is managed entirely in-memory by the Node.js gateway.
+
+### 4.2 Content-Addressed Storage (CAS)
+Code persistence mimics Git's underlying architecture:
+- **Append-Only Blobs**: Every saved file version is hashed (SHA-256) and stored as an immutable blob. 
+- **Atomic CAS Sync**: When a Pull Request is approved, `encrypted_blobs`, `live_keyframes`, and `file_snapshots` are simultaneously committed across the database, preventing orphaned data during merge conflicts.
+
+### 4.3 Automated Session Persistence
+- **Synchronous `docRef` State Bridge**: Eliminates React state closure delay, ensuring all Monaco keystrokes write into the live Yjs document synchronously.
+- **Debounced Snapshotting**: The system takes automatic idle snapshots of the CRDT structure every 2.5 seconds.
+- **Auto-Save**: Automatic saves are triggered when switching file tabs, ensuring developers never lose uncommitted state if their browser crashes.
+
+---
+
+## 5. Security & Cryptography Implementations
+
+- **Authentication & Cookies**: JWT refresh tokens are strictly stored as `HttpOnly`, `SameSite=Lax` cookies, neutralizing XSS token theft vectors.
+- **Key Derivation (PBKDF2)**: 256-bit symmetric keys are derived via PBKDF2-HMAC-SHA256 using 100,000 iterations and dynamic, cryptographically secure 128-bit salts generated per project.
+- **In-Memory Derived Key Caching**: Memoized session salts and an LRU key cache reduce keystroke encryption time to `<0.01ms` to guarantee zero typing latency.
+- **Terminal WebSocket Guard**: The `/ws/terminal` endpoint enforces strict JWT cryptographic validation, instantly rejecting unauthorized interactive PTY connections.
+
+---
+
+## 6. System Execution Models & Portability
+
+Nulltor is designed to be completely portable and distributable as a SaaS or localized appliance.
+
+| Deployment Mode | Mechanism | Description |
 | :--- | :--- | :--- |
-| **Universal Local Startup** | `npm start` | Self-healing bootstrap: creates virtual env, installs dependencies, verifies frontend build, and starts FastAPI + Gateway on `http://localhost:3330`. |
-| **Universal Production Docker** | `docker compose up --build` | Launches containerized Gateway + FastAPI + PostgreSQL on single unified port `3330`. |
-| **Hot-Reload Dev Docker** | `npm run docker:dev` | Volume-mounted live development with instant code reloading. |
-| **Process Cleanup** | `npm run stop` | Cross-platform port cleaner terminating active processes on ports 3330, 8001, and 3000. |
+| **Universal Local Startup** | `npm start` | Self-healing bootstrap: creates virtual env, installs dependencies, verifies frontend build, and starts FastAPI + Gateway on a unified port (`:3330`). |
+| **Enterprise Docker Stack** | `docker compose up --build` | Launches containerized Gateway + FastAPI + PostgreSQL. Easily deployable to AWS, Azure, or on-premise Kubernetes clusters. |
+| **mDNS Zero-Config** | `nulltor.local:3330` | The Node.js gateway automatically advertises the service via multicast DNS, allowing users on the same Wi-Fi to connect instantly without knowing IP addresses. |
 
 ---
 
-## 6. What Nulltor Lacks (Next Enterprise Frontier)
+## 7. Future Roadmap
 
-While Nulltor is fast, hardened, and functionally comprehensive for core LAN/local collaboration, the following items remain open for future major milestones:
-
-1. **Dedicated SFU / Mesh Scalability (WebRTC)**:
-   - *Current*: Full peer-to-peer WebRTC mesh for small teams (3–6 developers).
-   - *Future*: Selective Forwarding Unit (SFU) like mediasoup / livekit for 20+ participant rooms.
-2. **CAS Garbage Collection & Purge Pipeline**:
-   - *Current*: Append-only content-addressed storage (CAS) preserving all historical blobs.
-   - *Future*: Automated garbage collection and orphaned blob pruning pipeline.
-3. **Interactive Commit DAG Network Graph**:
-   - *Current*: Commits and branches are managed via timeline and modal lists.
-   - *Future*: Visual SVG/Canvas commit network graph showing branch divergence and merge ancestry.
+1. **Dedicated SFU / Mesh Scalability (WebRTC)**: Upgrading from peer-to-peer WebRTC to a Selective Forwarding Unit (SFU) like mediasoup to support 20+ participant video rooms.
+2. **Interactive Commit DAG Network Graph**: Visual SVG/Canvas commit network graph showing branch divergence and merge ancestry.
+3. **CAS Garbage Collection**: Automated garbage collection and orphaned blob pruning pipelines to optimize long-term database storage sizes.

@@ -217,7 +217,7 @@ async def terminal_websocket(websocket: WebSocket):
     script_path = os.path.join(temp_dir, script_name)
 
     if code:
-        with open(script_path, "w", encoding="utf-8") as f:
+        with open(script_path, "w", encoding="utf-8", newline="") as f:
             f.write(code)
 
     # Write sibling workspace files if provided
@@ -226,7 +226,7 @@ async def terminal_websocket(websocket: WebSocket):
             if fpath and fcontent and fpath != script_name:
                 sibling_path = os.path.join(temp_dir, fpath)
                 os.makedirs(os.path.dirname(sibling_path), exist_ok=True)
-                with open(sibling_path, "w", encoding="utf-8") as sf:
+                with open(sibling_path, "w", encoding="utf-8", newline="") as sf:
                     sf.write(fcontent)
 
     try:
@@ -256,7 +256,7 @@ async def terminal_websocket(websocket: WebSocket):
             cmd_args = [app, "-u", script_name]
             spawn_app = app
             spawn_cmdline = f'-u "{script_name}"'
-            docker_image = "nulltor-sandbox-python:latest"
+            docker_image = os.environ.get("DOCKER_IMAGE_PYTHON", "nulltor-python-sandbox:latest")
             docker_cmd = ["python", "-u", f"/code/{script_name}"]
 
         elif language in ["javascript", "typescript", "javascriptreact", "typescriptreact", "jsx", "tsx"]:
@@ -286,11 +286,17 @@ async def terminal_websocket(websocket: WebSocket):
                     spawn_cmdline = f'-y tsx "{script_name}"'
 
             docker_image = "nulltor-sandbox-node:latest"
-            docker_cmd = ["tsx", f"/code/{script_name}"]
+            if language == "javascript" and ext == ".js":
+                docker_cmd = ["node", f"/code/{script_name}"]
+            else:
+                docker_cmd = ["tsx", f"/code/{script_name}"]
 
         elif language == "c":
             docker_image = os.environ.get("DOCKER_IMAGE_C", "nulltor-sandbox-c:latest")
-            docker_cmd = ["sh", "-c", f"gcc /code/{script_name} -o /tmp/runner && /tmp/runner"]
+            docker_cmd = [
+                "sh", "-c",
+                f"printf '#include <stdio.h>\\nvoid __attribute__((constructor)) __unbuf(void){{ setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); }}\\n' > /tmp/_unbuf.c && gcc /code/{script_name} /tmp/_unbuf.c -o /tmp/runner && /tmp/runner"
+            ]
             if not use_docker:
                 compiler = _find_binary("gcc") or _find_binary("clang")
                 if not compiler and _check_docker_available():
@@ -332,7 +338,10 @@ async def terminal_websocket(websocket: WebSocket):
 
         elif language in ["cpp", "c++"]:
             docker_image = os.environ.get("DOCKER_IMAGE_CPP", "nulltor-sandbox-c:latest")
-            docker_cmd = ["sh", "-c", f"g++ -std=c++17 /code/{script_name} -o /tmp/runner && /tmp/runner"]
+            docker_cmd = [
+                "sh", "-c",
+                f"printf '#include <stdio.h>\\nextern \"C\" void __attribute__((constructor)) __unbuf(void){{ setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); }}\\n' > /tmp/_unbuf.c && g++ -std=c++17 /code/{script_name} /tmp/_unbuf.c -o /tmp/runner && /tmp/runner"
+            ]
             if not use_docker:
                 compiler = _find_binary("g++") or _find_binary("clang++")
                 if not compiler and _check_docker_available():

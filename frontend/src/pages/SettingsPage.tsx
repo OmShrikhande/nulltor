@@ -341,6 +341,81 @@ export function SettingsPage() {
                 description="Select which LLM provider powers the autonomous coding agent."
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* System Defaults 1-Click Quick Switch */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = saveLLMConfig({
+                          provider: 'groq',
+                          model: 'qwen/qwen3.8-27b',
+                          baseUrl: 'https://api.groq.com/openai/v1',
+                          apiKey: '',
+                        });
+                        setLlmConfig(next);
+                        syncRemotePreferences(settings, execSettings, next);
+                        setSaved(true);
+                        setTimeout(() => setSaved(false), 1500);
+                      }}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textAlign: 'left',
+                        background: provider === 'groq' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-1)',
+                        border: provider === 'groq' ? '1px solid #3b82f6' : '1px solid var(--border)',
+                        color: provider === 'groq' ? '#3b82f6' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>⚡ Default #1</span>
+                        {provider === 'groq' && <span style={{ fontSize: 10, background: '#3b82f6', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Active</span>}
+                      </div>
+                      <div style={{ fontSize: 11, opacity: 0.8 }}>Groq · Qwen 3.8-27B</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = saveLLMConfig({
+                          provider: 'gemini',
+                          model: 'gemini-flash-lite-latest',
+                          baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                          apiKey: '',
+                        });
+                        setLlmConfig(next);
+                        syncRemotePreferences(settings, execSettings, next);
+                        setSaved(true);
+                        setTimeout(() => setSaved(false), 1500);
+                      }}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textAlign: 'left',
+                        background: provider === 'gemini' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-1)',
+                        border: provider === 'gemini' ? '1px solid #10b981' : '1px solid var(--border)',
+                        color: provider === 'gemini' ? '#10b981' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>✨ Default #2</span>
+                        {provider === 'gemini' && <span style={{ fontSize: 10, background: '#10b981', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Active</span>}
+                      </div>
+                      <div style={{ fontSize: 11, opacity: 0.8 }}>Gemini Flash Lite</div>
+                    </button>
+                  </div>
+
                   <select
                     value={provider}
                     onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}

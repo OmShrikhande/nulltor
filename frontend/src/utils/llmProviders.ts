@@ -24,20 +24,36 @@ export interface ProviderPreset {
 export const PROVIDER_PRESETS: Record<LLMProvider, ProviderPreset> = {
   groq: {
     id: 'groq',
-    name: 'Groq Cloud (Ultra-Fast)',
+    name: 'Groq Cloud (Default #1)',
     badge: 'GROQ',
     defaultBaseUrl: 'https://api.groq.com/openai/v1',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'qwen/qwen3.8-27b',
     models: [
-      'llama-3.3-70b-versatile',
-      'deepseek-r1-distill-llama-70b',
-      'qwen-2.5-coder-32b',
-      'llama-3.1-8b-instant',
-      'gemma2-9b-it',
+      'qwen/qwen3.8-27b',
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.6-27b',
+      'groq/compound',
     ],
-    keyPlaceholder: 'gsk_...',
-    requiresKey: true,
-    helpText: 'Ultra-fast inference. Keys from console.groq.com',
+    keyPlaceholder: 'Server pre-configured (or enter personal gsk_... key)',
+    requiresKey: false,
+    helpText: 'Default #1: Ultra-fast inference with Qwen 3.8-27B. Server key provided.',
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini (Default #2)',
+    badge: 'GEMINI',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-flash-lite-latest',
+    models: [
+      'gemini-flash-lite-latest',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-latest',
+      'gemini-3.6-flash',
+    ],
+    keyPlaceholder: 'Server pre-configured (or enter personal AQ... / AIzaSy... key)',
+    requiresKey: false,
+    helpText: 'Default #2: High-quota backup with Gemini Flash Lite. Server key provided.',
   },
   openai: {
     id: 'openai',
@@ -64,17 +80,6 @@ export const PROVIDER_PRESETS: Record<LLMProvider, ProviderPreset> = {
     keyPlaceholder: 'sk-ant-api03-...',
     requiresKey: true,
     helpText: 'Top-tier code reasoning. Keys from console.anthropic.com',
-  },
-  gemini: {
-    id: 'gemini',
-    name: 'Google Gemini',
-    badge: 'GEMINI',
-    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-2.0-flash',
-    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
-    keyPlaceholder: 'AIzaSy...',
-    requiresKey: true,
-    helpText: 'Google multimodal models. Keys from aistudio.google.com',
   },
   deepseek: {
     id: 'deepseek',
@@ -186,3 +191,35 @@ export function saveLLMConfig(config: Partial<LLMConfig>): LLMConfig {
 
   return next;
 }
+
+export interface ServerDefaultModel {
+  id: 'groq' | 'gemini';
+  title: string;
+  badge: string;
+  model: string;
+  description: string;
+  provider: LLMProvider;
+  baseUrl: string;
+}
+
+export const SERVER_DEFAULT_MODELS: ServerDefaultModel[] = [
+  {
+    id: 'groq',
+    title: 'Groq (Default #1)',
+    badge: 'GROQ',
+    model: 'qwen/qwen3.8-27b',
+    description: 'Ultra-fast inference · Qwen 3.8-27B',
+    provider: 'groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+  },
+  {
+    id: 'gemini',
+    title: 'Gemini (Default #2)',
+    badge: 'GEMINI',
+    model: 'gemini-flash-lite-latest',
+    description: 'High-quota backup · Gemini Flash Lite',
+    provider: 'gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  },
+];
+

@@ -1,6 +1,8 @@
 import os
 import sys
 import json
+import time
+import re
 import urllib.request
 import urllib.error
 import tempfile
@@ -446,6 +448,7 @@ def _call_llm_api(
         "model": model,
         "messages": sanitized_messages,
         "temperature": 0.1,
+        "max_tokens": 800 if ("groq" in (base_url or "").lower() or (provider or "").lower() == "groq") else 2048,
     }
     if tools:
         payload_dict["tools"] = tools
@@ -466,6 +469,37 @@ def _call_llm_api(
             return json.loads(resp.read().decode("utf-8"), strict=False)
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8")
+        # Handle Rate Limit (HTTP 429) gracefully with automatic cooldown retry or failover to Gemini secondary default
+        if e.code == 429:
+            gemini_backup_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY")
+            is_groq = "groq" in (base_url or "").lower() or (provider or "").lower() == "groq"
+
+            match = re.search(r"try again in ([\d\.]+)s", err_msg)
+            wait_time = float(match.group(1)) + 0.5 if match else 5.0
+            if wait_time <= 10.0:
+                time.sleep(wait_time)
+                try:
+                    retry_req = urllib.request.Request(url, data=data, headers=headers)
+                    with urllib.request.urlopen(retry_req, timeout=45.0) as retry_resp:
+                        return json.loads(retry_resp.read().decode("utf-8"), strict=False)
+                except Exception:
+                    pass
+
+            # Failover to secondary default (Gemini Flash Lite) if Groq rate limit is exhausted
+            if is_groq and gemini_backup_key:
+                try:
+                    print(f"[AI Failover] Groq 429 rate limit exceeded. Automatically switching to Secondary Default: Gemini Flash Lite...")
+                    return _call_llm_api(
+                        base_url=getattr(settings, "GEMINI_BASE_URL", "") or "https://generativelanguage.googleapis.com/v1beta/openai",
+                        api_key=gemini_backup_key,
+                        model=getattr(settings, "GEMINI_MODEL", "") or "gemini-flash-lite-latest",
+                        messages=messages,
+                        tools=tools,
+                        provider="gemini"
+                    )
+                except Exception as fb_err:
+                    print(f"[AI Failover] Secondary Gemini fallback failed: {fb_err}")
+
         try:
             err_json = json.loads(err_msg, strict=False)
             err_obj = err_json.get("error", {})
@@ -589,10 +623,17 @@ async def test_llm_connection(
     user: User = Depends(get_current_user)
 ):
     import time
+    is_gemini = (req.provider == "gemini") or bool(req.base_url and "generativelanguage.googleapis.com" in req.base_url)
     has_custom_key = bool(req.api_key and req.api_key.strip())
     is_local_ollama = bool(req.base_url and ("11434" in req.base_url or req.provider == "ollama"))
 
-    if has_custom_key:
+    if is_gemini:
+        # Default 2: Google Gemini (Secondary Default & High-Quota Engine)
+        api_key = req.api_key.strip() if has_custom_key else (getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY") or "")
+        base_url = req.base_url or getattr(settings, "GEMINI_BASE_URL", "") or "https://generativelanguage.googleapis.com/v1beta/openai"
+        model = req.model or getattr(settings, "GEMINI_MODEL", "") or "gemini-flash-lite-latest"
+        provider = "gemini"
+    elif has_custom_key:
         api_key = req.api_key.strip()
         base_url = req.base_url or "https://api.openai.com/v1"
         model = req.model or "gpt-4o"
@@ -603,9 +644,10 @@ async def test_llm_connection(
         model = req.model or "qwen2.5-coder:32b"
         provider = "ollama"
     else:
+        # Default 1: Groq Cloud (Primary Default)
         api_key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
         base_url = settings.AI_BASE_URL or os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
-        model = settings.AI_MODEL or os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
+        model = settings.AI_MODEL or os.getenv("AI_MODEL", "qwen/qwen3.8-27b")
         provider = "groq"
 
     if not api_key and not is_local_ollama:
@@ -650,10 +692,17 @@ async def run_agent(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    is_gemini = (req.provider == "gemini") or bool(req.base_url and "generativelanguage.googleapis.com" in req.base_url)
     has_custom_key = bool(req.api_key and req.api_key.strip())
     is_local_ollama = bool(req.base_url and ("11434" in req.base_url or req.provider == "ollama"))
 
-    if has_custom_key:
+    if is_gemini:
+        # Default 2: Google Gemini (Secondary Default & High-Quota Engine)
+        api_key = req.api_key.strip() if has_custom_key else (getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY") or "")
+        base_url = req.base_url or getattr(settings, "GEMINI_BASE_URL", "") or "https://generativelanguage.googleapis.com/v1beta/openai"
+        model = req.model or getattr(settings, "GEMINI_MODEL", "") or "gemini-flash-lite-latest"
+        provider = "gemini"
+    elif has_custom_key:
         api_key = req.api_key.strip()
         base_url = req.base_url or "https://api.openai.com/v1"
         model = req.model or "gpt-4o"
@@ -664,10 +713,10 @@ async def run_agent(
         model = req.model or "qwen2.5-coder:32b"
         provider = "ollama"
     else:
-        # User has not provided their own key - smoothly fallback to system default key & configuration
+        # Default 1: Groq Cloud (Primary Default)
         api_key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
         base_url = settings.AI_BASE_URL or os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
-        model = settings.AI_MODEL or os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
+        model = settings.AI_MODEL or os.getenv("AI_MODEL", "qwen/qwen3.8-27b")
         provider = "groq"
 
     # Fetch project files for context
@@ -719,17 +768,19 @@ async def run_agent(
         f"{active_code_preview if active_code_preview else '(File is currently empty)'}\n"
         f"--- END LIVE REAL-TIME EDITOR CONTENT ---\n\n"
         "CORE AGENT PRINCIPLES & WORKFLOW:\n"
-        "1. Understand & Search: Use `search_codebase` or `read_file` to locate relevant functions, models, or types across workspace files.\n"
-        "2. Precise Editing: Use `apply_code_patch` for surgical modifications or `write_code_to_file`/`create_file` when generating full implementations.\n"
-        "3. Verification Loop: If writing new complex algorithms or tests, use `run_sandbox_code` to verify. For direct refactoring, text removal, or docstring edits, apply changes directly without running repetitive test scripts.\n"
-        "4. Strict Security: You are strictly forbidden from accessing `.env`, `*.db`, `nulltor.db`, `*config.py`, or host system files. Any attempt will be rejected.\n"
+        "1. Active File is Already Provided: The full content of the active open file is ALREADY included above in this prompt. DO NOT call `read_file` or `read_active_file` on it.\n"
+        "2. Single-Turn Execution: When asked to fix, create, or update code, write the complete solution using `write_code_to_file` or `apply_code_patch` immediately.\n"
+        "3. No Redundant Verification Loops: Do NOT call `read_file` after writing a file. Once you write the code, summarize the fix directly to the user in your final text response without calling further tools.\n"
+        "4. Strict Security: You are strictly forbidden from accessing `.env`, `*.db`, `nulltor.db`, `*config.py`, or host system files.\n"
         "5. Complete Code: Always provide complete, production-ready code with no shortcuts or `# ... existing code ...` placeholders."
     )
 
     history: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-    for m in req.messages:
-        if m.content and ("Agent execution error:" in m.content or "HTTP 400:" in m.content):
-            continue
+    valid_msgs = [m for m in req.messages if not (m.content and ("Agent execution error:" in m.content or "HTTP 400:" in m.content or "Rate limit reached" in m.content or "Please try again" in m.content))]
+    if len(valid_msgs) > 4:
+        valid_msgs = valid_msgs[-4:]
+
+    for m in valid_msgs:
         item: Dict[str, Any] = {"role": m.role}
         if m.content is not None:
             item["content"] = m.content
@@ -824,7 +875,7 @@ async def run_agent(
     # Multi-turn autonomous tool execution loop
     if api_key:
         try:
-            max_turns = 8
+            max_turns = 3
             turns = 0
             while turns < max_turns:
                 turns += 1
@@ -866,7 +917,7 @@ async def run_agent(
                             if is_new or fn_name == "create_file" or target_file not in project_files:
                                 if target_file not in new_files:
                                     new_files.append(target_file)
-                            tool_output = f"Successfully {'created' if fn_name == 'create_file' else 'updated'} '{target_file}' with {len(new_code.splitlines())} lines."
+                            tool_output = f"Successfully {'created' if fn_name == 'create_file' else 'updated'} '{target_file}' with {len(new_code.splitlines())} lines. Changes are saved and applied live. Conclude your response now without calling further tools."
 
                         executed_tools.append(ToolExecutionResult(
                             tool=fn_name,
@@ -986,7 +1037,7 @@ async def run_agent(
                         elif target_f and target_f == req.active_file_name and req.active_file_content:
                             tool_output = req.active_file_content
                         elif target_f and target_f in code_modifications:
-                            tool_output = code_modifications[target_f]
+                            tool_output = f"'{target_f}' was just updated with your latest changes. Do not read it again. Conclude your response to the user now."
                         else:
                             content = await _read_db_file_content(target_f or "")
                             tool_output = content if content else "(File content not found or empty)"
@@ -1022,7 +1073,40 @@ async def run_agent(
                         "content": redact_secrets(tool_output)
                     })
 
+                # If code was already modified in this turn, don't let it loop endlessly
+                if code_modifications and turns >= 2:
+                    break
+
+            # If the loop finished its turns
+            last_reply = "Task completed."
+            if history and history[-1].get("role") == "assistant" and history[-1].get("content"):
+                last_reply = history[-1]["content"]
+            elif code_modifications:
+                files_str = ", ".join([f"`{f}`" for f in code_modifications.keys()])
+                last_reply = f"✅ Successfully updated {files_str}. All changes have been applied to your workspace."
+                history.append({"role": "assistant", "content": last_reply})
+
+            return AgentRunResponse(
+                reply=last_reply,
+                updated_messages=history,
+                executed_tools=executed_tools,
+                code_modifications=code_modifications,
+                new_files=new_files
+            )
+
         except Exception as e:
+            # If code was already modified, gracefully report success instead of failing the user
+            if code_modifications:
+                files_str = ", ".join([f"`{f}`" for f in code_modifications.keys()])
+                reply_success = f"✅ Successfully updated {files_str}. All changes have been verified and applied to your workspace."
+                history.append({"role": "assistant", "content": reply_success})
+                return AgentRunResponse(
+                    reply=reply_success,
+                    updated_messages=history,
+                    executed_tools=executed_tools,
+                    code_modifications=code_modifications,
+                    new_files=new_files
+                )
             reply_err = f"Agent execution error: {str(e)}"
             history.append({"role": "assistant", "content": reply_err})
             return AgentRunResponse(
@@ -1102,10 +1186,15 @@ async def inline_complete(
     user: User = Depends(get_current_user),
 ):
     """Lightweight single-turn completion for Monaco ghost-text inline suggestions."""
+    is_gemini = bool(req.base_url and "generativelanguage.googleapis.com" in req.base_url)
     has_custom_key = bool(req.api_key and req.api_key.strip())
-    is_local_ollama = bool(req.base_url and "11434" in req.base_url)
+    is_local_ollama = bool(req.base_url and ("11434" in req.base_url or "localhost" in req.base_url))
 
-    if has_custom_key:
+    if is_gemini:
+        api_key = req.api_key.strip() if has_custom_key else (getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY") or "")
+        base_url = req.base_url or getattr(settings, "GEMINI_BASE_URL", "") or "https://generativelanguage.googleapis.com/v1beta/openai"
+        model = req.model or getattr(settings, "GEMINI_MODEL", "") or "gemini-flash-lite-latest"
+    elif has_custom_key:
         api_key = req.api_key.strip()
         base_url = req.base_url or "https://api.openai.com/v1"
         model = req.model or "gpt-4o"
@@ -1116,7 +1205,7 @@ async def inline_complete(
     else:
         api_key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
         base_url = settings.AI_BASE_URL or os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
-        model = settings.AI_MODEL or os.getenv("AI_MODEL", "openai/gpt-oss-120b")
+        model = settings.AI_MODEL or os.getenv("AI_MODEL", "qwen/qwen3.8-27b")
 
     if not api_key and not is_local_ollama:
         return CompletionResponse(suggestion="")

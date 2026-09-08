@@ -34,10 +34,12 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  ArrowLeftRight,
 } from 'lucide-react';
 import {
   type LLMProvider,
   PROVIDER_PRESETS,
+  SERVER_DEFAULT_MODELS,
   loadLLMConfig,
   saveLLMConfig,
 } from '../../utils/llmProviders';
@@ -576,6 +578,35 @@ export function AgentPanel({
             <span className="agent-model-name">{formatModelName(model)}</span>
           </div>
 
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (provider === 'gemini') {
+                handleUpdateConfig({
+                  provider: 'groq',
+                  model: 'qwen/qwen3.8-27b',
+                  baseUrl: 'https://api.groq.com/openai/v1',
+                  apiKey: '',
+                });
+                toast('Switched to Default #1: Groq Cloud (Qwen 3.8)', 'success');
+              } else {
+                handleUpdateConfig({
+                  provider: 'gemini',
+                  model: 'gemini-flash-lite-latest',
+                  baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                  apiKey: '',
+                });
+                toast('Switched to Default #2: Google Gemini (Flash Lite)', 'success');
+              }
+            }}
+            className="btn-icon"
+            style={{ width: '22px', height: '22px', color: 'var(--text-muted)' }}
+            title={provider === 'gemini' ? 'Quick Switch to Default #1: Groq (Qwen 3.8)' : 'Quick Switch to Default #2: Gemini (Flash Lite)'}
+          >
+            <ArrowLeftRight size={11} />
+          </button>
+
           {openFile && (
             <span
               className="agent-header-badge"
@@ -646,6 +677,78 @@ export function AgentPanel({
             >
               Done
             </button>
+          </div>
+
+          {/* Quick-Switch System Defaults */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>System Default Engines (1-Click Switch)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  handleUpdateConfig({
+                    provider: 'groq',
+                    model: 'qwen/qwen3.8-27b',
+                    baseUrl: 'https://api.groq.com/openai/v1',
+                    apiKey: '',
+                  });
+                  toast('Switched to Default #1: Groq (Qwen 3.8)', 'success');
+                }}
+                style={{
+                  padding: '7px 8px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  background: provider === 'groq' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-0)',
+                  border: provider === 'groq' ? '1px solid #3b82f6' : '1px solid var(--border)',
+                  color: provider === 'groq' ? '#3b82f6' : 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>⚡ Default #1</span>
+                  {provider === 'groq' && <span style={{ fontSize: '9px', background: '#3b82f6', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>Active</span>}
+                </div>
+                <div style={{ fontSize: '10px', opacity: 0.8 }}>Groq · Qwen 3.8-27B</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleUpdateConfig({
+                    provider: 'gemini',
+                    model: 'gemini-flash-lite-latest',
+                    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                    apiKey: '',
+                  });
+                  toast('Switched to Default #2: Gemini Flash Lite', 'success');
+                }}
+                style={{
+                  padding: '7px 8px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  background: provider === 'gemini' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-0)',
+                  border: provider === 'gemini' ? '1px solid #10b981' : '1px solid var(--border)',
+                  color: provider === 'gemini' ? '#10b981' : 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>✨ Default #2</span>
+                  {provider === 'gemini' && <span style={{ fontSize: '9px', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>Active</span>}
+                </div>
+                <div style={{ fontSize: '10px', opacity: 0.8 }}>Gemini Flash Lite</div>
+              </button>
+            </div>
           </div>
 
           {/* Provider Selector */}
@@ -817,9 +920,37 @@ export function AgentPanel({
                 <span>{testingConnection ? 'Testing Connection...' : 'Test Connection'}</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  handleUpdateConfig({
+                    provider: 'groq',
+                    apiKey: '',
+                    model: 'qwen/qwen3.8-27b',
+                    baseUrl: 'https://api.groq.com/openai/v1',
+                  });
+                  setConnectionStatus({ tested: false });
+                  toast('Reset to server default agent (Groq qwen3.8-27b)', 'info');
+                }}
+                title="Clear custom credentials and use the server-configured agent"
+                style={{
+                  fontSize: '11px',
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  background: 'var(--bg-1)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                Reset to Server Default
+              </button>
+
               {!apiKey && (
-                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                  (No key entered: will test default system key)
+                <span style={{ fontSize: '10.5px', color: '#10b981', fontWeight: 500 }}>
+                  ● Using server default
                 </span>
               )}
             </div>

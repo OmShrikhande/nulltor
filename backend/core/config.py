@@ -29,10 +29,15 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3330,http://127.0.0.1:3330,http://nulltor.local:3330"
 
-    # AI Agent (Groq)
+    # AI Agent (Groq - Primary Default)
     GROQ_API_KEY: str = ""
     AI_BASE_URL: str = "https://api.groq.com/openai/v1"
-    AI_MODEL: str = "llama-3.3-70b-versatile"
+    AI_MODEL: str = "qwen/qwen3.8-27b"
+
+    # AI Agent (Google Gemini - Secondary Default & Backup)
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    GEMINI_MODEL: str = "gemini-flash-lite-latest"
 
     # Docker Sandbox for Terminal
     USE_DOCKER_SANDBOX: bool = False
