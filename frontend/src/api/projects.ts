@@ -41,9 +41,12 @@ export interface EncryptedDataResponse {
 export interface PassphraseMigrate {
   old_passphrase: string;
   new_passphrase: string;
-  new_snapshots: SnapshotItem[];
-  new_commits: CommitItem[];
+  snapshots?: SnapshotItem[];
+  commits?: CommitItem[];
+  new_snapshots?: SnapshotItem[];
+  new_commits?: CommitItem[];
 }
+
 
 export const projectsApi = {
   list: (skip = 0, limit = 50) =>

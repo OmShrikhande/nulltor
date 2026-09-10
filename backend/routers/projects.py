@@ -341,7 +341,8 @@ async def migrate_passphrase(
                 {"pattern": f"%::{bid}"}
             )
         
-        for snap in payload.snapshots:
+        effective_snapshots = payload.snapshots or payload.new_snapshots or []
+        for snap in effective_snapshots:
             await db.execute(
                 sa_text("INSERT INTO file_snapshots (file_id, branch_id, data, updated_at) VALUES (:fid, :bid, :data, CURRENT_TIMESTAMP) ON CONFLICT(file_id, branch_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP"),
                 {"fid": str(snap.file_id), "bid": snap.branch_id, "data": snap.data}
@@ -366,7 +367,8 @@ async def migrate_passphrase(
                 )
             
     # 2. Update commits
-    for commit_data in payload.commits:
+    effective_commits = payload.commits or payload.new_commits or []
+    for commit_data in effective_commits:
         await db.execute(
             sa_text("UPDATE commits SET snapshot = :data WHERE id = :cid"),
             {"data": commit_data.snapshot, "cid": str(commit_data.id)}

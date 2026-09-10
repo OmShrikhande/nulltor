@@ -62,6 +62,45 @@ function fromBase64(b64: string): Uint8Array {
   return bytes;
 }
 
+export function encryptWithPassphrase(plaintext: string, passphrase: string): string {
+  if (!passphrase) throw new Error('Crypto passphrase not set');
+  const salt = randomBytes(16);
+  const iv   = randomBytes(12);
+  const key  = passphraseToKey(passphrase, salt);
+
+  const plaintextBytes = new TextEncoder().encode(plaintext);
+  const cipher = gcm(key, iv);
+  const sealed = cipher.encrypt(plaintextBytes);
+
+  const packed = new Uint8Array(salt.length + iv.length + sealed.length);
+  packed.set(salt, 0);
+  packed.set(iv, 16);
+  packed.set(sealed, 28);
+
+  return toBase64(packed);
+}
+
+export function decryptWithPassphrase(ciphertext: string, passphrase: string, saltStr = 'nulltor-salt'): string {
+  if (!passphrase) throw new Error('Crypto passphrase not set');
+
+  if (ciphertext.includes(':')) {
+    return _legacyCBCDecrypt(ciphertext, saltStr, passphrase);
+  }
+
+  const packed = fromBase64(ciphertext);
+  if (packed.length < 28 + 16) throw new Error('Invalid ciphertext: too short');
+
+  const salt   = packed.slice(0, 16);
+  const iv     = packed.slice(16, 28);
+  const sealed = packed.slice(28);
+
+  const key = passphraseToKey(passphrase, salt);
+  const cipher = gcm(key, iv);
+
+  const plaintextBytes = cipher.decrypt(sealed);
+  return new TextDecoder().decode(plaintextBytes);
+}
+
 export function useCrypto(passphrase: string, _salt: string) {
   const ready = useMemo(() => !!passphrase, [passphrase]);
   const defaultSalt = useMemo(() => (passphrase ? randomBytes(16) : new Uint8Array(16)), [passphrase]);
@@ -87,30 +126,12 @@ export function useCrypto(passphrase: string, _salt: string) {
   }
 
   function decrypt(ciphertext: string): string {
-    if (!passphrase) throw new Error('Crypto passphrase not set');
-
-    // Support legacy CryptoJS CBC format ("ivHex:base64data") transparently
-    if (ciphertext.includes(':')) {
-      return _legacyCBCDecrypt(ciphertext, _salt, passphrase);
-    }
-
-    const packed = fromBase64(ciphertext);
-    if (packed.length < 28 + 16) throw new Error('Invalid ciphertext: too short');
-
-    const salt   = packed.slice(0, 16);
-    const iv     = packed.slice(16, 28);
-    const sealed = packed.slice(28);       // ciphertext + authTag
-
-    const key = passphraseToKey(passphrase, salt);
-    const cipher = gcm(key, iv);
-
-    // GCM automatically verifies auth tag — throws if tampered
-    const plaintextBytes = cipher.decrypt(sealed);
-    return new TextDecoder().decode(plaintextBytes);
+    return decryptWithPassphrase(ciphertext, passphrase, _salt);
   }
 
   return { encrypt, decrypt, ready };
 }
+
 
 /**
  * Legacy compatibility shim — decrypts old AES-256-CBC (CryptoJS) ciphertext.

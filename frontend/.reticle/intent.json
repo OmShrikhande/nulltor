@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "intents": {
+    "inline:signing-in-with-valid-superadmin-credentials-aut-51f4c463": {
+      "id": "inline:signing-in-with-valid-superadmin-credentials-aut-51f4c463",
+      "statement": "Signing in with valid superadmin credentials authenticates and navigates to the dashboard",
+      "state": "proved",
+      "declaredAt": 1788927462074,
+      "binding": {
+        "kind": "allOf",
+        "predicates": [
+          {
+            "kind": "net",
+            "urlContains": "/api/auth/login",
+            "status": 200
+          },
+          {
+            "kind": "route",
+            "contains": "dashboard"
+          }
+        ]
+      },
+      "surface": {
+        "files": [
+          "src/components/auth/LoginForm.tsx"
+        ]
+      },
+      "provenBy": {
+        "verdictId": "reticle_act_and_wait:1788927462539",
+        "grade": "net",
+        "at": 1788927462539
+      }
+    },
+    "flow:user-signin": {
+      "id": "flow:user-signin",
+      "statement": "Signing in with valid superadmin credentials authenticates and navigates to the dashboard",
+      "state": "proved",
+      "declaredAt": 1788927524349,
+      "binding": {
+        "flow": "user-signin"
+      },
+      "surface": {
+        "flow": "user-signin"
+      },
+      "provenBy": {
+        "verdictId": "flow_replay:user-signin:1788931324699",
+        "grade": "asserted",
+        "at": 1788931324699
+      }
+    },
+    "inline:superadmin-signs-in-and-navigates-to-dashboard-1ecd8ce9": {
+      "id": "inline:superadmin-signs-in-and-navigates-to-dashboard-1ecd8ce9",
+      "statement": "Superadmin signs in and navigates to dashboard",
+      "state": "proved",
+      "declaredAt": 1788929539187,
+      "binding": {
+        "kind": "allOf",
+        "predicates": [
+          {
+            "kind": "net",
+            "urlContains": "/api/auth/login",
+            "status": 200
+          },
+          {
+            "kind": "route",
+            "contains": "dashboard"
+          }
+        ]
+      },
+      "surface": {
+        "files": [
+          "src/components/auth/LoginForm.tsx"
+        ]
+      },
+      "provenBy": {
+        "verdictId": "reticle_act_and_wait:1788929539542",
+        "grade": "net",
+        "at": 1788929539542
+      }
+    },
+    "inline:click-new-project-button-to-open-modal-a3313225": {
+      "id": "inline:click-new-project-button-to-open-modal-a3313225",
+      "statement": "Click New project button to open modal",
+      "state": "bound",
+      "declaredAt": 1788929553787,
+      "binding": {
+        "kind": "element",
+        "query": {
+          "role": "textbox"
+        }
+      }
+    },
+    "inline:creating-a-new-workspace-sends-post-api-projects-44da2048": {
+      "id": "inline:creating-a-new-workspace-sends-post-api-projects-44da2048",
+      "statement": "Creating a new workspace sends POST /api/projects and persists project",
+      "state": "bound",
+      "declaredAt": 1788929572442,
+      "binding": {
+        "kind": "net",
+        "method": "POST",
+        "urlContains": "/api/projects",
+        "ok": true
+      }
+    }
+  }
+}

@@ -7,6 +7,8 @@ import { MembersModal } from './MembersModal';
 import { toast } from '../shared/Toast';
 import { Folder, GitBranch, Users, Trash2, Key, Copy, RefreshCw, ShieldCheck, MoreVertical } from 'lucide-react';
 import CryptoJS from 'crypto-js';
+import { encryptWithPassphrase, decryptWithPassphrase } from '../../hooks/useCrypto';
+
 
 interface ProjectCardProps {
   project: ProjectRead;
@@ -104,46 +106,45 @@ export function ProjectCard({ project, branchCount = 0, myRole, currentUserId, o
         setMigrationStatus('Fetching encrypted data...');
         const { snapshots, commits } = await projectsApi.getEncryptedData(project.id);
         
-        setMigrationStatus('Re-encrypting snapshots...');
-        const PBKDF2_ITERATIONS = 10000;
-        const KEY_SIZE = 256 / 32;
-        
-        // Derive old and new keys
-        const oldKey = CryptoJS.PBKDF2(oldPassphrase.trim(), 'nulltor-static-salt-v1', { keySize: KEY_SIZE, iterations: PBKDF2_ITERATIONS });
-        const newKey = CryptoJS.PBKDF2(newPassphrase.trim(), 'nulltor-static-salt-v1', { keySize: KEY_SIZE, iterations: PBKDF2_ITERATIONS });
-        
-        const decrypt = (ciphertext: string) => {
-          const [ivHex, data] = ciphertext.split(':');
-          if (!ivHex || !data) throw new Error('Invalid ciphertext format');
-          const iv = CryptoJS.enc.Hex.parse(ivHex);
-          const decrypted = CryptoJS.AES.decrypt(data, oldKey, { iv });
-          if (decrypted.sigBytes < 0) throw new Error('Decryption failed');
-          return decrypted.toString(CryptoJS.enc.Utf8);
-        };
-        
-        const encrypt = (plaintext: string) => {
-          const iv = CryptoJS.lib.WordArray.random(128 / 8);
-          const encrypted = CryptoJS.AES.encrypt(plaintext, newKey, { iv });
-          return iv.toString() + ':' + encrypted.toString();
-        };
+        setMigrationStatus('Re-encrypting snapshots & commits...');
+        const roomSalt = project.room_salt || `nulltor-salt-${project.id}`;
 
-        const new_snapshots = snapshots.map(s => ({
-          ...s,
-          data: encrypt(decrypt(s.data))
-        }));
-        
-        setMigrationStatus('Re-encrypting commits...');
-        const new_commits = commits.map(c => ({
-          ...c,
-          snapshot: encrypt(decrypt(c.snapshot))
-        }));
-        
+        const new_snapshots = snapshots.map(s => {
+          if (!s.data) return s;
+          try {
+            const plaintext = decryptWithPassphrase(s.data, oldPassphrase.trim(), roomSalt);
+            return {
+              ...s,
+              data: encryptWithPassphrase(plaintext, newPassphrase.trim()),
+            };
+          } catch (err: any) {
+            console.error(`Failed to re-encrypt snapshot for file ${s.file_id}:`, err);
+            throw new Error('Failed to decrypt file snapshot with old passphrase. Please verify your old passphrase.');
+          }
+        });
+
+        const new_commits = commits.map(c => {
+          if (!c.snapshot) return c;
+          try {
+            const plaintext = decryptWithPassphrase(c.snapshot, oldPassphrase.trim(), roomSalt);
+            return {
+              ...c,
+              snapshot: encryptWithPassphrase(plaintext, newPassphrase.trim()),
+            };
+          } catch (err: any) {
+            console.error(`Failed to re-encrypt commit ${c.id}:`, err);
+            throw new Error('Failed to decrypt commit history with old passphrase.');
+          }
+        });
+
         setMigrationStatus('Uploading migrated data...');
         await projectsApi.migratePassphrase(project.id, {
           old_passphrase: oldPassphrase.trim(),
           new_passphrase: newPassphrase.trim(),
+          snapshots: new_snapshots,
+          commits: new_commits,
           new_snapshots,
-          new_commits
+          new_commits,
         });
         
         // Update local storage key so the user stays authenticated seamlessly

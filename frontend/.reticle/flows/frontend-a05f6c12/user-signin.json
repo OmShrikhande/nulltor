@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "name": "user-signin",
+  "projectId": "frontend-a05f6c12",
+  "createdAt": 1788927524347,
+  "steps": [
+    {
+      "tool": "reticle_act_sequence",
+      "anchor": {
+        "kind": "role",
+        "role": "textbox",
+        "name": "Email or Username"
+      },
+      "steps": [
+        {
+          "tool": "reticle_act",
+          "anchor": {
+            "kind": "role",
+            "role": "textbox",
+            "name": "Email or Username"
+          },
+          "args": {
+            "value": "superadmin@nulltor.com"
+          },
+          "action": "fill"
+        },
+        {
+          "tool": "reticle_act",
+          "anchor": {
+            "kind": "role",
+            "role": "textbox",
+            "name": "Password"
+          },
+          "args": {
+            "value": "admin123"
+          },
+          "action": "fill"
+        }
+      ]
+    },
+    {
+      "tool": "reticle_act",
+      "anchor": {
+        "kind": "role",
+        "role": "button",
+        "name": "Sign in to Workspace"
+      },
+      "args": {},
+      "action": "click",
+      "expect": {
+        "net": {
+          "urlContains": "/api/auth/login",
+          "status": 200
+        }
+      }
+    },
+    {
+      "tool": "reticle_act",
+      "anchor": {
+        "kind": "role",
+        "role": "button",
+        "name": "Sign out"
+      },
+      "args": {},
+      "action": "click"
+    }
+  ],
+  "startPath": "/#/login",
+  "intent": "Signing in with valid superadmin credentials authenticates and navigates to the dashboard",
+  "intentId": "flow:user-signin"
+}

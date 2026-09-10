@@ -449,7 +449,7 @@ export function IDEPage() {
     );
   }
 
-  return <IDEInner projectId={projectId!} passphrase={passphrase} />;
+  return <IDEInner key={projectId} projectId={projectId!} passphrase={passphrase} />;
 }
 
 function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: string }) {
@@ -461,11 +461,17 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   const openFile = useEditorStore((s) => s.openFile);
   const language = useEditorStore((s) => s.language);
 
-  // Guard: if the stored branch belongs to a different project (stale Zustand state
-  // from navigating between projects), clear it immediately so we don't send a
-  // wrong branch_id to the API and get "Branch not found" errors.
+  // Guards: if the stored project or branch belongs to a different project (stale Zustand state
+  // from navigating between projects), clear them immediately so we don't leak state.
+  if (currentProject && currentProject.id !== projectId) {
+    setProject(null);
+  }
   if (currentBranch && currentBranch.project_id !== projectId) {
     setBranch(null);
+  }
+  // Immediately isolate editor store tabs and files to this project
+  if (useEditorStore.getState().activeProjectId !== projectId) {
+    useEditorStore.getState().switchProject(projectId);
   }
 
   const [branches, setBranches] = useState<BranchRead[]>([]);
@@ -527,12 +533,15 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   const canReview = user?.role === 'superadmin' || user?.role === 'admin' || currentProject?.owner_id === user?.id;
 
   const isOnNonMainBranch = currentBranch?.type !== 'main';
-  const activeSalt = currentProject?.room_salt || `nulltor-salt-${projectId}`;
+  const activeSalt = (currentProject && currentProject.id === projectId)
+    ? (currentProject.room_salt || `nulltor-salt-${projectId}`)
+    : `nulltor-salt-${projectId}`;
   const { encrypt, decrypt } = useCrypto(passphrase, activeSalt);
 
   const { doc, docRef, text, isConnected, peers, cursors, emitCursor, saveSnapshot, socket, decryptionError } = useYjsDoc({
     fileId: openFile?.id ?? '__none__',
     branchId: currentBranch?.id ?? 'main',
+    projectId: projectId,
     encrypt,
     decrypt,
     username: user?.username ?? 'Anonymous',
@@ -619,6 +628,21 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
     projectId ?? null,
     currentBranch?.id ?? null
   );
+
+  // Strict project data isolation: prune tabs and active file if they do not exist in this project's tree
+  useEffect(() => {
+    if (!treeLoading && tree) {
+      const validIds = new Set<string>();
+      function collectIds(nodes: DirectoryNode[]) {
+        for (const n of nodes) {
+          validIds.add(n.id);
+          if (n.children && n.children.length > 0) collectIds(n.children);
+        }
+      }
+      collectIds(tree);
+      useEditorStore.getState().pruneInvalidTabs(validIds);
+    }
+  }, [tree, treeLoading]);
 
   // ── Global Botpress & AI Tool Bridge with Full File Permissions ─────────────
   useEffect(() => {
@@ -965,68 +989,96 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
   async function handleApplyAgentCode(fileName: string, code: string) {
     if (!projectId) return;
 
-    const findNodeByPath = (nodes: DirectoryNode[], pathParts: string[]): DirectoryNode | null => {
-      if (pathParts.length === 0) return null;
-      const [currentPart, ...restParts] = pathParts;
+    const baseName = fileName.replace(/\\/g, '/').split('/').filter(Boolean).pop() || fileName;
+    const isOpenFileMatch = openFile && (
+      openFile.name === fileName ||
+      openFile.name === baseName ||
+      fileName.endsWith('/' + openFile.name) ||
+      fileName === 'active file'
+    );
+
+    // 1. If the target file is currently open in editor, directly update live buffer and save
+    if (isOpenFileMatch && openFile) {
+      const liveDoc = docRef.current || doc;
+      if (liveDoc) {
+        const liveText = liveDoc.getText('content');
+        liveDoc.transact(() => {
+          liveText.delete(0, liveText.length);
+          liveText.insert(0, code);
+        }, 'local');
+      }
+      setEditorValue(code);
+      try {
+        saveSnapshot();
+      } catch (err) {
+        console.warn('Could not immediately persist snapshot:', err);
+      }
+      toast(`✦ AI updated ${openFile.name}`, 'success');
+      return;
+    }
+
+    // 2. Otherwise find target node in tree recursively
+    const findNodeRecursive = (nodes: DirectoryNode[]): DirectoryNode | null => {
       for (const n of nodes) {
-        if (n.name === currentPart) {
-          if (restParts.length === 0 && n.type === 'file') return n;
-          if (restParts.length > 0 && n.type === 'dir' && n.children) {
-            const found = findNodeByPath(n.children, restParts);
-            if (found) return found;
-          }
+        if (n.type === 'file' && (n.name === baseName || n.name === fileName)) {
+          return n;
+        }
+        if (n.children && n.children.length > 0) {
+          const found = findNodeRecursive(n.children);
+          if (found) return found;
         }
       }
       return null;
     };
 
     let updatedTree = await refreshTree();
-    const pathParts = fileName.replace(/\\/g, '/').split('/').filter(Boolean);
-    let targetNode = findNodeByPath(updatedTree || tree, pathParts);
+    let targetNode = findNodeRecursive(updatedTree || tree);
 
     if (!targetNode) {
       try {
-        await (window as any).nulltorTools.writeFile(fileName, code);
+        if ((window as any).nulltorTools?.writeFile) {
+          await (window as any).nulltorTools.writeFile(fileName, code);
+        } else {
+          await fetch('/api/tools/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              action: 'write_file',
+              project_id: projectId,
+              branch_id: currentBranch?.id,
+              file_path: fileName,
+              content: code,
+            }),
+          });
+        }
         updatedTree = await refreshTree();
-        targetNode = findNodeByPath(updatedTree || tree, pathParts);
+        targetNode = findNodeRecursive(updatedTree || tree);
       } catch (err) {
-        console.error("Failed to auto-create file:", err);
+        console.error('Failed to auto-create file:', err);
       }
     }
 
     if (!targetNode) return;
 
-    // 1. If the target file is already open, directly update its buffer
-    if (openFile && openFile.id === targetNode.id) {
-      if (text && doc) {
-        doc.transact(() => {
-          text.delete(0, text.length);
-          text.insert(0, code);
-        }, 'local');
-      }
-      setEditorValue(code);
-      toast(`✦ AI updated ${fileName}`, 'success');
-      return;
-    }
+    // 3. Open the target node in editor
+    pendingAgentCodeRef.current = { fileId: targetNode.id, code };
 
-    if (targetNode) {
-      pendingAgentCodeRef.current = { fileId: targetNode.id, code };
+    const editorStore = useEditorStore.getState();
+    editorStore.setFile(targetNode);
+    editorStore.openTab(targetNode);
 
-      const editorStore = useEditorStore.getState();
-      editorStore.setFile(targetNode);
-      editorStore.openTab(targetNode);
+    if (fileName.endsWith('.py')) editorStore.setLanguage('python');
+    else if (fileName.endsWith('.js') || fileName.endsWith('.jsx')) editorStore.setLanguage('javascript');
+    else if (fileName.endsWith('.ts') || fileName.endsWith('.tsx')) editorStore.setLanguage('typescript');
+    else if (fileName.endsWith('.html')) editorStore.setLanguage('html');
+    else if (fileName.endsWith('.css')) editorStore.setLanguage('css');
+    else editorStore.setLanguage('plaintext');
 
-      if (fileName.endsWith('.py')) editorStore.setLanguage('python');
-      else if (fileName.endsWith('.js') || fileName.endsWith('.jsx')) editorStore.setLanguage('javascript');
-      else if (fileName.endsWith('.ts') || fileName.endsWith('.tsx')) editorStore.setLanguage('typescript');
-      else if (fileName.endsWith('.html')) editorStore.setLanguage('html');
-      else if (fileName.endsWith('.css')) editorStore.setLanguage('css');
-      else editorStore.setLanguage('plaintext');
-
-      setEditorValue(code);
-      toast(`Created and opened ${fileName}`, 'success');
-    }
+    setEditorValue(code);
+    toast(`✦ AI updated ${targetNode.name}`, 'success');
   }
+
 
   async function handleBranchChange(branch: BranchRead) {
     setBranch(branch);
@@ -1688,6 +1740,7 @@ function IDEInner({ projectId, passphrase }: { projectId: string; passphrase: st
               title="Drag to resize Agent panel"
             />
             <AgentPanel
+              key={projectId}
               projectId={projectId}
               branchId={currentBranch?.id}
               currentCode={getCurrentCode()}

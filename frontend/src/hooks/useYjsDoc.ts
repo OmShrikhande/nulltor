@@ -12,6 +12,7 @@ import { io, Socket } from 'socket.io-client';
 interface UseYjsDocOptions {
   fileId: string;
   branchId: string;
+  projectId?: string;
   encrypt: (plaintext: string) => string;
   decrypt: (ciphertext: string) => string;
   username?: string;
@@ -70,6 +71,7 @@ export function base64ToUint8Array(base64: string): Uint8Array {
 export function useYjsDoc({
   fileId,
   branchId,
+  projectId,
   encrypt,
   decrypt,
   username = 'Anonymous',
@@ -93,7 +95,9 @@ export function useYjsDoc({
   encryptRef.current = encrypt;
 
   const isRealFile = Boolean(fileId && fileId !== '__none__');
-  const effectiveFileId = isRealFile ? fileId : '__workspace__';
+  const effectiveFileId = isRealFile
+    ? fileId
+    : (projectId ? `${projectId}::__workspace__` : '__workspace__');
   const effectiveBranchId = branchId || 'main';
   const roomKey = `${effectiveFileId}::${effectiveBranchId}`;
 

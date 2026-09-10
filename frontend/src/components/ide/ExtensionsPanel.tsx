@@ -397,34 +397,24 @@ export function ExtensionsPanel({ onClose, onOpenSettings }: ExtensionsPanelProp
         </div>
       </div>
 
-      {/* 3. Open VSX Banner Notice matching Image 2 */}
+      {/* 3. Open VSX Banner Notice & Status */}
       <div
         style={{
-          padding: '4px 12px 8px 12px',
+          padding: '6px 12px 8px 12px',
           fontSize: '10.5px',
           color: 'var(--text-muted)',
-          lineHeight: 1.35,
+          lineHeight: 1.4,
           borderBottom: '1px solid var(--border)',
+          background: 'rgba(59, 130, 246, 0.05)',
         }}
       >
-        <span>By default, Nulltor IDE uses </span>
-        <a
-          href="https://open-vsx.org"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 500 }}
-        >
-          Open VSX
-        </a>
-        <span> as a marketplace. This can be changed in </span>
-        <span
-          onClick={onOpenSettings}
-          style={{ color: '#3b82f6', cursor: 'pointer', fontWeight: 500 }}
-        >
-          Nulltor IDE settings
-        </span>
-        <span>.</span>
+        <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Blocks size={12} style={{ color: '#3b82f6' }} />
+          <span>Language Tools & Extensions</span>
+        </div>
+        <span>Core tools (Python, Clangd, Go, Prettier, ESLint) are <strong>built directly into Nulltor</strong>. The <a href="https://open-vsx.org" target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'none' }}>Open VSX</a> registry is integrated for browsing and bookmarking community extensions.</span>
       </div>
+
 
       {/* 4. Scrollable Extensions Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0' }}>
@@ -613,9 +603,19 @@ function InstalledExtensionRow({
 
       {/* Content Column */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: '11.5px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {extension.displayName || extension.name}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+
+
+          <span style={{ fontWeight: 600, fontSize: '11.5px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {extension.displayName || extension.name}
+          </span>
+          {DEFAULT_INSTALLED_IDS.includes(extension.id) && (
+            <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontWeight: 600, flexShrink: 0 }}>
+              Built-in
+            </span>
+          )}
         </div>
+
         <div
           style={{
             fontSize: '10.5px',

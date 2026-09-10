@@ -448,7 +448,7 @@ def _call_llm_api(
         "model": model,
         "messages": sanitized_messages,
         "temperature": 0.1,
-        "max_tokens": 800 if ("groq" in (base_url or "").lower() or (provider or "").lower() == "groq") else 2048,
+        "max_tokens": 1500 if ("groq" in (base_url or "").lower() or (provider or "").lower() == "groq") else 2048,
     }
     if tools:
         payload_dict["tools"] = tools
@@ -747,10 +747,10 @@ async def run_agent(
         except Exception as e:
             print("AI context loading error:", e)
 
-    # Prepare live active file snippet for prompt
+    # Prepare live active file snippet for prompt (conserving token budget)
     active_code_preview = req.active_file_content if req.active_file_content is not None else ""
-    if len(active_code_preview) > 50000:
-        active_code_preview = active_code_preview[:50000] + "\n... [truncated]"
+    if len(active_code_preview) > 15000:
+        active_code_preview = active_code_preview[:15000] + "\n... [truncated to conserve tokens]"
 
     diagnostics_info = ""
     if req.diagnostics:
@@ -769,11 +769,12 @@ async def run_agent(
         f"--- END LIVE REAL-TIME EDITOR CONTENT ---\n\n"
         "CORE AGENT PRINCIPLES & WORKFLOW:\n"
         "1. Active File is Already Provided: The full content of the active open file is ALREADY included above in this prompt. DO NOT call `read_file` or `read_active_file` on it.\n"
-        "2. Single-Turn Execution: When asked to fix, create, or update code, write the complete solution using `write_code_to_file` or `apply_code_patch` immediately.\n"
-        "3. No Redundant Verification Loops: Do NOT call `read_file` after writing a file. Once you write the code, summarize the fix directly to the user in your final text response without calling further tools.\n"
+        "2. Fixing/Editing Code: When asked to fix, repair, refactor, or write code for the active file, invoke `write_code_to_file` with the complete corrected file content to apply changes immediately and reliably.\n"
+        "3. Single-Turn Execution: Once you call `write_code_to_file` or `create_file`, summarize the fix directly in your response without calling redundant inspection tools.\n"
         "4. Strict Security: You are strictly forbidden from accessing `.env`, `*.db`, `nulltor.db`, `*config.py`, or host system files.\n"
         "5. Complete Code: Always provide complete, production-ready code with no shortcuts or `# ... existing code ...` placeholders."
     )
+
 
     history: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     valid_msgs = [m for m in req.messages if not (m.content and ("Agent execution error:" in m.content or "HTTP 400:" in m.content or "Rate limit reached" in m.content or "Please try again" in m.content))]
@@ -887,6 +888,18 @@ async def run_agent(
                 tool_calls = message.get("tool_calls")
                 if not tool_calls:
                     content_str = message.get("content") or "Task completed."
+                    if not code_modifications and req.active_file_name and content_str:
+                        code_match = re.search(r'```(?:[a-zA-Z0-9_\-\+\#\.]+)?\n([\s\S]*?)```', content_str)
+                        if code_match:
+                            extracted_code = code_match.group(1).strip()
+                            if len(extracted_code) > 5:
+                                target = req.active_file_name
+                                code_modifications[target] = extracted_code
+                                executed_tools.append(ToolExecutionResult(
+                                    tool="write_code_to_file",
+                                    args={"file_name": target},
+                                    result=f"Applied updated solution ({len(extracted_code.splitlines())} lines) to '{target}'."
+                                ))
                     return AgentRunResponse(
                         reply=content_str,
                         updated_messages=history,
@@ -894,6 +907,7 @@ async def run_agent(
                         code_modifications=code_modifications,
                         new_files=new_files
                     )
+
 
                 for tc in tool_calls:
                     fn_name = tc["function"]["name"]
@@ -935,20 +949,45 @@ async def run_agent(
                             replace_block = args.get("replace_block", "")
                             
                             current = code_modifications.get(target_file)
-                            if current is None and target_file == req.active_file_name:
+                            if current is None and (target_file == req.active_file_name or os.path.basename(target_file) == os.path.basename(req.active_file_name or "")):
                                 current = req.active_file_content
                             if current is None:
                                 current = await _read_db_file_content(target_file)
 
                             if current is None:
                                 tool_output = f"Error: Target file '{target_file}' not found."
-                            elif search_block not in current:
-                                tool_output = f"Error: Search block not found in '{target_file}'. Please inspect file content and retry."
                             else:
-                                patched_code = current.replace(search_block, replace_block, 1)
-                                code_modifications[target_file] = patched_code
-                                await _ensure_db_file_exists(target_file, patched_code)
-                                tool_output = f"Successfully applied patch to '{target_file}'."
+                                current_norm = current.replace("\r\n", "\n")
+                                search_norm = search_block.replace("\r\n", "\n")
+                                replace_norm = replace_block.replace("\r\n", "\n")
+
+                                if search_norm in current_norm:
+                                    patched_code = current_norm.replace(search_norm, replace_norm, 1)
+                                    code_modifications[target_file] = patched_code
+                                    await _ensure_db_file_exists(target_file, patched_code)
+                                    tool_output = f"Successfully applied patch to '{target_file}'."
+                                else:
+                                    # Fuzzy whitespace line matching: match stripped lines
+                                    search_lines = [line.strip() for line in search_norm.strip().splitlines() if line.strip()]
+                                    current_lines = current_norm.splitlines()
+                                    match_start = -1
+                                    match_end = -1
+                                    if search_lines:
+                                        for i in range(len(current_lines) - len(search_lines) + 1):
+                                            sub_lines = [current_lines[i + j].strip() for j in range(len(search_lines))]
+                                            if sub_lines == search_lines:
+                                                match_start = i
+                                                match_end = i + len(search_lines)
+                                                break
+                                    if match_start != -1:
+                                        patched_lines = current_lines[:match_start] + replace_norm.splitlines() + current_lines[match_end:]
+                                        patched_code = "\n".join(patched_lines)
+                                        code_modifications[target_file] = patched_code
+                                        await _ensure_db_file_exists(target_file, patched_code)
+                                        tool_output = f"Successfully applied patch to '{target_file}'."
+                                    else:
+                                        tool_output = f"Error: Search block not found in '{target_file}'. If updating the whole file, please use 'write_code_to_file' instead."
+
 
                         executed_tools.append(ToolExecutionResult(
                             tool=fn_name,
@@ -1085,6 +1124,21 @@ async def run_agent(
                 files_str = ", ".join([f"`{f}`" for f in code_modifications.keys()])
                 last_reply = f"✅ Successfully updated {files_str}. All changes have been applied to your workspace."
                 history.append({"role": "assistant", "content": last_reply})
+
+            # If no tool generated code modifications, check if a code solution is present in the assistant reply
+            if not code_modifications and req.active_file_name and last_reply:
+                code_match = re.search(r'```(?:[a-zA-Z0-9_\-\+\#\.]+)?\n([\s\S]*?)```', last_reply)
+                if code_match:
+                    extracted_code = code_match.group(1).strip()
+                    if len(extracted_code) > 5:
+                        target = req.active_file_name
+                        code_modifications[target] = extracted_code
+                        executed_tools.append(ToolExecutionResult(
+                            tool="write_code_to_file",
+                            args={"file_name": target},
+                            result=f"Applied updated code ({len(extracted_code.splitlines())} lines) to '{target}'."
+                        ))
+
 
             return AgentRunResponse(
                 reply=last_reply,

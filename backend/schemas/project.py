@@ -75,5 +75,8 @@ class EncryptedDataResponse(BaseModel):
 class PassphraseMigrate(BaseModel):
     old_passphrase: str
     new_passphrase: str
-    snapshots: list[SnapshotItem]
-    commits: list[CommitItem]
+    snapshots: Optional[list[SnapshotItem]] = None
+    commits: Optional[list[CommitItem]] = None
+    new_snapshots: Optional[list[SnapshotItem]] = None
+    new_commits: Optional[list[CommitItem]] = None
+
